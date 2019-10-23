@@ -16,7 +16,7 @@ except FileNotFoundError as e:
     print("Credential file not found")
     os.exit()
 
-# Fireup sockets 
+# Fire up sockets 
 serverSocket = socket(AF_INET, SOCK_STREAM) 
 serverSocket.bind((serverName, serverPort))
 serverSocket.listen(1) 
@@ -32,6 +32,12 @@ while True:
             connectionSocket, addr = serverSocket.accept() 
             read_list.append(connectionSocket)
             print("New connection @" + str(addr))
+
+            data = { 
+                "blockDuration" : blockDuration, 
+                "timeout" : timeout, 
+            }
+            constructResponse("welcomePacket", data)
 
         else: 
             information = connectionSocket.recv(1024) 
@@ -63,85 +69,8 @@ while True:
                     "explanation" : "Unknown Command" 
                 })
             
-            connectionSocket.send(response)
+        connectionSocket.send(response)
 
-
-
-# class Server(): 
-#     def __init__(self, serverPort, blockDuration, timeout): 
-#         self.serverPort = serverPort 
-#         self.blockDuration = blockDuration
-#         self.timeout = timeout 
-#         self.serverName = "localhost"
-#         self.socket = socket(AF_INET, SOCK_STREAM)
-#         self.socket.bind((self.serverName, self.serverPort)) 
-#         self.socket.listen(1)
-#         print("Listening on " + self.serverName + ":" + str(self.serverPort) + "...")
-        
-#         self.onlineUsers = [] 
-
-#     def listen(self): 
-#         # read_list = [self.socket]
-#         while 1: 
-            
-#             clientConnection, address = self.socket.accept()
-#             print("New Connection from" + address) 
-#             self.socket.send("Hi! Welcome to the primitiveMess :)\n Please enter in your username and password!") 
-#             # readable, w, e = select.select(read_list, [], []) 
-#             # for item in readable: 
-#             #     print("checking item in readable")
-#             #     # Incoming connection
-#             #     if item in socket: 
-#             #         newConn, addr = socket.accept() 
-#             #         read_list.append(newConn) 
-#             #         print("New Connection from" + addr) 
-#             #         self.socket.send("Hi! Welcome to the primitiveMess :)\n Please enter in your username and password!") 
-
-
-#             #     # Incoming packet 
-#             #     else: 
-#             #         packet = socket.recv(1024) 
-#             #         print("Received: " + packet)
-#             #         # packet = json.loads(data)
-#             #         # command = packet.get("command") 
-                    
-#             #         # Depending on what the command 
-
-#     # def clientLogin(self): 
-        
-#     #     prompt for username and password 
-#     #     if new user: 
-#     #         store into credentials.txt 
-
-#     #     else:
-#     #         if user is online: 
-#     #             raise exception("User is already online!") 
-#     #         for (nTries = 0; nTries < 3; nTries++):  
-#     #             check input and compare to credentials.txt 
-#     #             if input == correct: 
-#     #                 newOnlineUser = OnlineUser(...)
-#     #                 self.onlineUsers.append(newOnlineUser) 
-#     #                 return  newOnlineUser
-                
-#     #         raise exception("Too many attempts, you have been blocked for " + str(blockDuration) " seconds.") 
-#             # (even from another IP address). Hm. TODO: 
-
-#     # def clientLogoff(self): 
-#     #     self.broadcast(user) 
-#     #     for user in self.onlineUsers: 
-#     #         if user.name  == userName: 
-#     #             self.onlineUsers.remove(user) 
-    
-#     # def getOnlineUsers(self): 
-#     #     response_string = ""
-#     #     for user in self.onlineUsers: 
-#     #         response_string.append(user.name + " is online.\n")
-#     #     if len(self.onlineUsers) == 0: 
-#     #         response_string = "There are currently no users online." 
-#     #     return response_string
-        
-#     # def broadcast(self, userName): 
-   
 # # if os.argv < 3:
 # #     print("Usage: python server.py <server_port> <block_duration> <timeout>") 
 # #     os.exit(1) 

@@ -14,6 +14,15 @@ def loadCredentialsFile(filePath):
         new_login["username"] = username
         new_login["password"] = password
         credentials_list.append(new_login) 
-
+        
     return credentials_list
 
+# Testing above code
+# username = "123"
+# password = "456" 
+# login_credentials = loadCredentialsFile("credentials.txt") 
+# for credential in login_credentials: 
+#     if credential["username"] == username and credential["password"] == password: 
+#         print("Correct!") 
+#     else: 
+#         print("Nope D:") 
