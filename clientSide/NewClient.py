@@ -1,6 +1,10 @@
 from socket import *
 import select 
-import time, threading
+import time 
+import _thread 
+import threading
+from clientPacketHander import constructReq, decodeResponse
+import sys
 
 class NewClient(): 
     def __init__(self, name): 
@@ -16,16 +20,19 @@ class NewClient():
         self._timeout = timeout
 
     def listen(self): 
-        while self.status == "active": 
-            command = raw_input(self.name + ": ")
+        while True: 
+            timer = threading.Timer(self._timeout, _thread.interrupt_main) 
+            command = None 
+            try: 
+                command = input(self._name + ": ") 
+            except KeyboardInterrupt:
+                pass 
+            timer.cancel() 
             
-            # Use select with timeout 
-        self.socket.close()
-
-
-# import time, threading
-# def foo():
-#     print(time.ctime())
-#     threading.Timer(10, foo).start()
-
-# foo()
+            if command == "exit": 
+                self._socket.send(constructReq("exit")) 
+                self._socket.close() 
+                print("ByeBye :)")
+                sys.exit()
+            else: 
+                print("Command Unknown...  YEEeet") 
