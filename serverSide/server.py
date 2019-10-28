@@ -17,11 +17,11 @@ class Server():
         self._serverName = serverName
         self._serverPort = serverPort
         self._serverSocket = None 
-
         self._blockDuration = blockDuration
         self._timeout = timeout
-        
-        self._logins = {}
+        self._readList = []
+        self._loginAttempts = {}
+        self._activeUsers = {}
         
     def initialiseServer(self): 
         def loadCredentialsFile(filePath): 
@@ -62,14 +62,14 @@ class Server():
             sys.exit() 
         
     def listenForNewConnections(self): 
-        read_list = [self._serverSocket] 
         print("Awaiting connections...") 
+        self._readList = [self._serverSocket]
         while True: 
-            readable, writable, errorable = select.select(read_list, [], [])
+            readable, writable, errorable = select.select(self._readList, [], [])
             for s in readable: 
                 if s is self._serverSocket: 
                     connectionSocket, addr = self._serverSocket.accept() 
-                    read_list.append(connectionSocket)
+                    self._readList.append(connectionSocket)
                     print("New connection @" + str(addr))
 
                     t = threading.Thread(target=self.listenToClient, args=(connectionSocket, addr)) 
@@ -80,32 +80,49 @@ class Server():
         print(f"Listening to client: {address}")
         while True:
             ready = select.select([connectionSocket], [], [], self._timeout)
-            print("S")
             if ready[0]: 
                 information = connectionSocket.recv(1024)
-                print("ACK! Received: " + str(information))
                 command, data = decodeReq(information)    
+                print(f"ACK! Received: {command} with data {data}")
+
+                # Add connectionSocketDataOnto the packet for initial authentication
+                if command in ["login", "exit"]: data["socket"] = connectionSocket
+
+                # Process the command
                 connectionSocket.send(self.processCommand(command, data))
             else: 
                 print(f'Timeout for connection @{address}')
-                # connectionSocket.close() 
-                # TODO: Remove from self._logins when client logs off 
+                self.closeClientConnection(data = { 
+                    "socket" : connectionSocket
+                }) 
+                
                 break
-
+    
     def processCommand(self, command, data): 
         commands = { 
-            "login" : self.authenticate 
+            "login" : self.authenticate, 
+            "exit" : self.closeClientConnection
         }
         return commands[command](data)
+
+    def closeClientConnection(self, data): 
+        connectionSocket = data["socket"] 
+        connectionSocket.close() 
+        self._readList.remove(connectionSocket) 
+        del self._activeUsers[connectionSocket]
+        return self.constructResponse("exit success")
+
+
+
 
     def authenticate(self, loginData): 
         username = loginData.get("username") 
         password = loginData.get("password") 
+        socket = loginData.get("socket")
 
-
-        # Check if user is blocked or already active
-        if username in self._logins: 
-            userInfo = self._logins.get(username) 
+        # Check if user is blocked
+        if username in self._loginAttempts: 
+            userInfo = self._loginAttempts.get(username) 
             def isBlocked(userInfo):
                 if userInfo.get("status") != "blocked":  return False
                 if time.time() - userInfo.get("blockTime") > self._blockDuration:
@@ -113,49 +130,46 @@ class Server():
                     return False
                 return True
             
-            def isActive(userInfor): 
-                if userInfo.get("status") != "active": return False 
-                return True
-
             if isBlocked(userInfo):
                 return self.constructResponse("Unsuccessful",  { 
-                        "explanation": "You've been blocked. Please try again later"
+                        "explanation": f"You've been blocked for {self._blockDuration}(s). Please try again later"
                     })
-            if isActive(userInfo): return self.constructResponse("Unsuccessful", { 
+
+        # Check if user is active 
+        for user in self._activeUsers: 
+            if self._activeUsers[user] == username: return self.constructResponse("Unsuccessful", { 
                     "explanation" : "You're already logged in elsewhere."
                 })
 
         # Check for correct login 
         for credential in self._login_credentials: 
             if credential["username"] == username and credential["password"] == password: 
-                if username in self._logins: 
-                    self._logins.get(username)["status"] = "active"
-                else: 
-                    self._logins[username] = { 
-                        "status" : "active"
-                    }
+                if username in self._loginAttempts: del self._loginAttempts[username] 
+                self._activeUsers[socket] = username
+                print("Login success for user: " + username)
                 return constructResponse("success")
 
-        if username in self._logins: 
-            self._logins[username]["attempts"] += 1 
-            if self._logins[username]["attempts"] == 3:
-                self._logins[username] = { 
+        # Incorrect Login
+        if username in self._loginAttempts: 
+            self._loginAttempts[username]["attempts"] += 1 
+            if self._loginAttempts[username]["attempts"] == 3:
+                self._loginAttempts[username] = { 
                     "status" : "blocked", 
                     "attempts" : 0, 
                     "blockTime" : time.time()
                 }
 
         else: 
-            self._logins[username] = { 
+            self._loginAttempts[username] = { 
                 "attempts" : 1, 
                 "status" : "unsuccessful" 
             } 
             
         return constructResponse("unsuccessful", { 
-            "explanation" : "Invalid Credentials"
+            "explanation" : "Invalid credentials, you have " + (3 - self._loginAttempts[username]["attempts"]) +  " left."
         })
 
-    def constructResponse(self, status, data=None): 
+    def constructResponse(self, status, data={}): 
         response = {} 
         response["status"] = status 
         response["data"] = data
