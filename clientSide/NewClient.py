@@ -1,6 +1,7 @@
 from socket import *
 import select 
 import sys
+import threading
 import json
 
 class NewClient(): 
@@ -11,30 +12,55 @@ class NewClient():
 
     def bindSocket(self, socket): 
         self._socket = socket 
-
+        
     def listen(self): 
-        while True: 
+        # Main thread for listening and second for getting responses
+        t = threading.Thread(target=self.listenToServer) 
+        # t.daemone = True 
+        t.start()  
+
+        def getCommand(): 
             command = None 
             try: 
-                command = input(self._name + ": ") 
+                command = input(self._name + " >> ") 
+                command = command.split(" ") 
             except KeyboardInterrupt:
                 pass 
             
-            if command == "exit": 
-                self._socket.send(constructReq("exit")) 
-                self._socket.close() 
-                print("ByeBye :)")
-                sys.exit()
+            if len(command) > 1: 
+                args = command[1:] 
+                self._socket.send(self.constructReq(command, args)) 
             else: 
-                print("Command Unknown...  YEEeet") 
+                self._socket.send(self.constructReq(command))
 
+        while True: 
+            getCommand() 
+
+    def listenToServer(self): 
+        ready = select.select([self._socket], [],[]) 
+        if ready[0]: 
+            response = self._socket.recv(1024) 
+            status, data = self.decodeResponse(response) 
+
+            try: 
+                if status == "success": print("Success! " + data.get("message")) 
+                else:  print(f'Command {data.get("command")} unsuccessful\nError message: {data.get("message")}')
+            except KeyError as e: 
+                print("Response broken, please report server error") 
+
+            if data.get("command") == "exit": 
+                self._socket.close() 
+                print("ByeBye! :)") 
+                sys.exit() 
+            
     @staticmethod
-    def constructReq(command, data=None): 
+    def constructReq(command, data={}): 
         req = {} 
         req["command"] = command 
         req["data"] = data
         req = json.dumps(req) 
         req = req.encode() 
+        print(req)
         return req 
 
     @staticmethod
@@ -44,3 +70,24 @@ class NewClient():
         status = response.get("status") 
         data = response.get("data") 
         return status, data 
+
+    # Prompt the user to log in
+    @staticmethod
+    def login(clientSocket): 
+        username = input("Username: ") 
+        password = input("Password: ") 
+        data = { 
+            "username" : username, 
+            "password" : password 
+        }
+
+        req = NewClient.constructReq("login", data)
+        clientSocket.send(req) 
+        reply = clientSocket.recv(1024)
+        status, data = NewClient.decodeResponse(reply)
+        if status == "success": 
+            c = NewClient(username)
+            return c
+
+        print("Unsuccessful: " + data.get("message")) 
+        return None
