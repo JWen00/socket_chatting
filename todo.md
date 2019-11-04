@@ -2,7 +2,7 @@ A good place to start would be to:
 
 * [x] implement the functionality to allow a single user to login with the server. 
 * [x] Next, add the blocking functionality for 3 unsuccessful attempts. 
-* [ ] You could then proceed to the timeout functionality (i.e. automatically logout a user after inactivity. 
+* [x] You could then proceed to the timeout functionality (i.e. automatically logout a user after inactivity. 
 * [ ] Then extend this to handle multiple clients.
 * [ ] Once your server can support multiple clients, implement the functions for presence notification, whoelse and whoelsesince.
 * [ ] Your next milestone should be to implement messaging between users. 

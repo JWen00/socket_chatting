@@ -60,7 +60,6 @@ class NewClient():
         req["data"] = data
         req = json.dumps(req) 
         req = req.encode() 
-        print(req)
         return req 
 
     @staticmethod
@@ -76,12 +75,11 @@ class NewClient():
     def login(clientSocket): 
         username = input("Username: ") 
         password = input("Password: ") 
-        data = { 
+
+        req = NewClient.constructReq("login", data = { 
             "username" : username, 
             "password" : password 
-        }
-
-        req = NewClient.constructReq("login", data)
+        })
         clientSocket.send(req) 
         reply = clientSocket.recv(1024)
         status, data = NewClient.decodeResponse(reply)
@@ -89,5 +87,5 @@ class NewClient():
             c = NewClient(username)
             return c
 
-        print("Unsuccessful: " + data.get("message")) 
+        print(f'Unsuccessful: " {data.get("message")}') 
         return None
