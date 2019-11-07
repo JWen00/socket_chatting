@@ -2,7 +2,10 @@ import time
 from socket import *
 import select 
 import json 
-from ClientManager import ClientManager
+from .clientManager import ClientManager
+from .session import Session
+
+from .exceptions.clientExceptions import *
 
 
 class NewServer(): 
@@ -19,7 +22,7 @@ class NewServer():
         self._blockDuration = blockDuration
         self._timeout = timeout
         self._readList = []
-        self._manager = ClientManager() 
+        self._manager = ClientManager(blockDuration) 
 
     def listen(self): 
         print("Server is listening...") 
@@ -62,6 +65,8 @@ class NewServer():
                         self.broadcast(f'{clientOJB.username} has left the chat.')
 
     def processCommand(self, command, data): 
+        """ Redirects client to appropriate command """ 
+
         commands = { 
             "login" : self.authenticate, 
             "logout" : self.closeClientConnection, 
@@ -74,40 +79,53 @@ class NewServer():
         return commands[command](data)
 
     def blockUser(self, data): 
-        hater = data["username"] 
-        hated = data["target"]
-        try: 
-            self.manager.block(hater, hated) 
-        # except: 
-        return self.constructResponse("success", data={
-            "command" : "block", 
-            "message" : f'You have blocked {hated}'
-        })
-        
-    def unblockUser(self, data): 
-        hatered = data["username"] 
-        unhated = data["target"] 
-        try: 
-            self.manager.unblock(hatered, unhated) 
-        # except: 
-        return self.constructResponse("success", data={
-            "command" : "unblock", 
-            "message" : f"You have unblocked {unhated}"
-        })
+        """ Client Command: Blocks User """ 
 
+        source = data["username"] 
+        target = data["target"]
+
+        try: 
+            self.manager.block(source, target) 
+            return "success", {
+            "command" : "block", 
+            "message" : f'You have blocked {target}'
+        }
+        except ErrorClientNotFound as e: 
+            return "unsuccessful", { 
+                "command" : "block", 
+                "message" : f'{target} does not exit.'
+            }
+             
+    def unblockUser(self, data): 
+        """ Client Command: Unblocks User """
+
+        source = data["username"] 
+        target = data["target"]
+
+        try: 
+            self.manager.block(source, target, action="unblock") 
+            return "success", {
+            "command" : "unblock", 
+            "message" : f"You have unblocked {target}"
+        }
+        except ErrorClientNotFound as e: 
+            return "unsuccessful", {
+            "command" : "unblock", 
+            "message" : f"{target} does not exit."
+        }
+       
     def whoElseSince(self, data): 
         time = data["time"] 
-        try: 
-            clients = self.manager.getClientsActiveSince(time) 
-        # except: 
-
-        return self.constructResponse("success", data={ 
+        clients = self.manager.getClientsActiveSince(time) 
+        return "success", { 
             "command" : "whoelsesince",  
             "users" : clients, 
             "message" : f"Users who have been active since {time}:"
-        })
+            }
 
-    def whoElse(self): 
+    def whoElse(self):
+        """ Get all active clients """ 
+
         activeUsers = self.manager.getActiveClients() 
         return self.constructResponse("success", data ={ 
             "command" : "whoelse", 
@@ -117,13 +135,12 @@ class NewServer():
 
     def produceBroadcasts(self, data=None): 
         """ Run broadcast for all clients """ 
-        try:  
-            self.broadcast(data["message"]) 
-        # except: 
-        return self.constructResponse("success", data= { 
+
+        self.broadcast(data["message"]) 
+        return "success", { 
             "command" : "broadcast", 
             "message" : "Your message has been broadcasted!"  
-        })
+        }
 
     def closeClientConnection(self, data): 
         """ Closes a client's connection """ 
@@ -160,7 +177,6 @@ class NewServer():
             "message" : f'Invalid credentials, you have {(3 - self._loginAttempts[username]["attempts"])}(s)" left.'
         })
         
-
     def broadcast(self, clientSocket, message): 
         broadcaster = self.manager.getClientBySocket(clientSocket) 
         for client in self._manager.getClientsNotBlockedBy(broadcaster): 
