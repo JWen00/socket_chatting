@@ -1,14 +1,6 @@
-import time 
-from socket import *
-import select 
-import json 
-from .clientManager import ClientManager
-from .session import Session
 
-from .exceptions.clientExceptions import *
-
-
-class NewServer(): 
+from .PrimitiveMessaging import *
+class Server(): 
     def __init__(self, serverName, serverPort, blockDuration, timeout): 
         try:
             self._serverSocket = socket(AF_INET, SOCK_STREAM) 
@@ -25,7 +17,8 @@ class NewServer():
         self._manager = ClientManager(blockDuration) 
 
     def listen(self): 
-        print("Server is listening...") 
+        """ Server listens to all incoming information until closed """
+
         self._readList = [self._serverSocket]
         while True: 
             readable, writable, errorable = select.select(self._readList, [], [])
