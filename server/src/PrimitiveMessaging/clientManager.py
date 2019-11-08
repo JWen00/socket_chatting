@@ -58,6 +58,15 @@ class ClientManager():
             "sessions" : [], 
             "blockedUsers" : [], 
         })
+        print(f"Added client! Now {len(self._clients)} client(s)")
+    
+    def updateLastActive(self, socket): 
+        try: 
+            client = self.getClientBySocket(socket) 
+            client["lastActive"] = time.time()
+        except ErrorClientNotFound as e: 
+            print("Cannot update last active - Client doesn't exit yet") 
+            sys.exit()
 
     def closeClientSession(self, socket): 
         clientOBJ = self.getClientBySocket(socket) 

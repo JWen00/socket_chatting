@@ -1,13 +1,14 @@
-from .clientManager import ClientManager
+from src.Server import Server
+import unittest
+import pytest
 
-def test_authenticateClient_success(): 
-    pass 
+@pytest_fixture
+def createClient(): 
+    serverPort = 5000
+    serverName = "localhost" 
+    clientSocket = socket(AF_INET, SOCK_STREAM) 
+    clientSocket.connect((serverName, serverPort)) 
+    return clientSocket
 
-def test_authenticateClient_blocked(): 
-    pass 
-
-def test_authenticateClient_active(): 
-    pass 
-
-def test_authenticateClient_invalid(): 
+def test_serverListening(): 
     pass 

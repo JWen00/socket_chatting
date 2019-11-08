@@ -27,35 +27,36 @@ class Server():
                 # Receiving new connections 
                 if s is self._serverSocket: 
                     connection, addr = self._serverSocket.accept() 
-                    self.manager.addClient(connection) 
-                    self._readList.append(socket) 
+                    self._manager.addClient(connection) 
+                    self._readList.append(connection) 
                     print("New connection @" + str(addr))
 
                 # Receiving data from made connections 
                 else: 
                     information = s.recv(1024)
-                    clientOJB = None
-                    for client in self._clients: 
-                        if client.sockName == s.getsockname: clientOJB = client
-
+                    client = self._manager.getClientBySocket(s) 
                     if information: 
+                        print("Receieved info!")
                         command, data = self.decodeReq(information)    
                         print(f"ACK! Command: {command} w/ data {data}")
 
                         # Add connectionSocketDataOnto the packet for initial authentication
-                        if command in ["login", "exit"]: data["socket"] = socket
+                        if command in ["login", "exit"]: data["socket"] = s
 
                         # Process the command
                         s.send(self.processCommand(command, data))
 
                         # Update the lastActive 
-                        clientOJB.lastActive = time.time() 
-                    elif not information and time.time() - clientOJB.lastActive > self._timeout: 
-                        print(f'Timeout for client: @{client.username}')
-                        self.closeClientConnection(data = { 
-                            "socket" : socket
-                        }) 
-                        self.broadcast(f'{clientOJB.username} has left the chat.')
+                        if client:
+                            client["lastActive"] = time.time()
+ 
+                    else: 
+                        if client and time.time() - client["lastActive"] > self._timeout: 
+                            print(f'Timeout for client: @{client.username}')
+                            self.closeClientConnection(data = { 
+                                "socket" : socket
+                            }) 
+                            self.broadcast(f'{client["username"]} has left the chat.')
 
     def processCommand(self, command, data): 
         """ Redirects client to appropriate command """ 
@@ -65,10 +66,17 @@ class Server():
             "logout" : self.closeClientConnection, 
             "broadcast" : self.produceBroadcasts, 
             "whoelse" : self.whoElse, 
-            "whoelsesince" : self.whoelsesince, 
+            "whoelsesince" : self.whoElseSince, 
             "block" : self.blockUser, 
             "unblock" : self.unblockUser, 
         }
+
+        if command not in commands: 
+            return self.constructResponse("unsuccessful", {
+                "command" : command, 
+                "message" : f'Command unknown: {command}'
+            })
+
         return commands[command](data)
 
     def blockUser(self, data): 
@@ -78,16 +86,17 @@ class Server():
         target = data["target"]
 
         try: 
-            self.manager.block(source, target) 
-            return "success", {
+            self._manager.block(source, target) 
+            return self.constructResponse("success", {
             "command" : "block", 
             "message" : f'You have blocked {target}'
-        }
+        })
+
         except ErrorClientNotFound as e: 
-            return "unsuccessful", { 
+            return self.constructResponse("unsuccessful", { 
                 "command" : "block", 
                 "message" : f'{target} does not exit.'
-            }
+            })
              
     def unblockUser(self, data): 
         """ Client Command: Unblocks User """
@@ -96,30 +105,31 @@ class Server():
         target = data["target"]
 
         try: 
-            self.manager.block(source, target, action="unblock") 
-            return "success", {
+            self._manager.block(source, target, action="unblock") 
+            return self.constructResponse("success", {
             "command" : "unblock", 
             "message" : f"You have unblocked {target}"
-        }
+        })
+
         except ErrorClientNotFound as e: 
-            return "unsuccessful", {
+            return self.constructResponse("unsuccessful", {
             "command" : "unblock", 
             "message" : f"{target} does not exit."
-        }
+        })
        
     def whoElseSince(self, data): 
         time = data["time"] 
-        clients = self.manager.getClientsActiveSince(time) 
-        return "success", { 
+        clients = self._manager.getClientsActiveSince(time) 
+        return self.constructResponse("success", { 
             "command" : "whoelsesince",  
             "users" : clients, 
             "message" : f"Users who have been active since {time}:"
-            }
+        })
 
     def whoElse(self):
         """ Get all active clients """ 
 
-        activeUsers = self.manager.getActiveClients() 
+        activeUsers = self._manager.getActiveClients() 
         return self.constructResponse("success", data ={ 
             "command" : "whoelse", 
             "users" : activeUsers, 
@@ -129,18 +139,18 @@ class Server():
     def produceBroadcasts(self, data=None): 
         """ Run broadcast for all clients """ 
 
-        self.broadcast(data["message"]) 
-        return "success", { 
+        self.broadcast(data["message"], data["source"]) 
+        return self.constructResponse("success", { 
             "command" : "broadcast", 
             "message" : "Your message has been broadcasted!"  
-        }
+        })
 
     def closeClientConnection(self, data): 
         """ Closes a client's connection """ 
         # TODO: Haven't physically socket.close()?? 
         
         socket = data["socket"]
-        self._readList.remove(socket) 
+        # self._readList.remove(socket) 
         self.manage.removeClient(socket) 
         return self.constructResponse("success", data = { 
             "command" : "exit", 
@@ -153,9 +163,10 @@ class Server():
         username = loginData.get("username") 
         password = loginData.get("password") 
         socket = loginData.get("socket")
-        status = self.manage.authenticateClient(username, password) 
+        status = self._manager.authenticateClient(username, password) 
         if status == "success": 
-            self.manager.updateClient(socket, username) 
+            self._manager.updateClient(socket, username) 
+            # self.broadcast(f'{username} is online!', socket) # CHECK TODO:
             return self.constructResponse("success", { 
                 "command" : "login", 
                 "message" : f"Logged in as {username}",
@@ -166,12 +177,12 @@ class Server():
         elif status == "alreadyActive" : return self.constructResponse("unsuccessful", { 
             "message" : "You're already logged in elsewhere."
         })
-        elif status == "wrontCredentials": return self.constructResponse("unsuccessful", { 
-            "message" : f'Invalid credentials, you have {(3 - self._loginAttempts[username]["attempts"])}(s)" left.'
+        elif status == "wrongCredentials": return self.constructResponse("unsuccessful", { 
+            "message" : f'Invalid credentials'
         })
         
     def broadcast(self, clientSocket, message): 
-        broadcaster = self.manager.getClientBySocket(clientSocket) 
+        broadcaster = self._manager.getClientBySocket(clientSocket) 
         for client in self._manager.getClientsNotBlockedBy(broadcaster): 
             client["socket"].send(self.constructResponse("broadcast", {
             "status" : "receivedBroadcast", 
@@ -187,13 +198,10 @@ class Server():
         return response 
 
     def decodeReq(self, req):
-        try:
-            req = req.decode() 
-            req = json.loads(req) 
-            command = req.get("command") 
-            data = req.get("data") 
-            return command, data 
-        except JSONDecodeError as e: 
-            print("There is something seriously wrong.. response is not JSON format D:") 
-            sys.exit()
+        req = req.decode() 
+        req = json.loads(req) 
+        command = req.get("command") 
+        data = req.get("data") 
+        return command, data 
+    
 
