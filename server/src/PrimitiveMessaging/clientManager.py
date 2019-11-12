@@ -42,7 +42,7 @@ class ClientManager():
 
         self._serverStartTime = time.time() 
         self._loginAttempts = {}
-        self._blockDuration = blockDuration
+        self._blockDuration = blockDuration * 1000
         self._clients = []
 
     def getClients(self): 
@@ -52,14 +52,13 @@ class ClientManager():
         self._clients.append({ 
             "socket" : socket, 
             "status" : "active", 
-            "lastActive" : None, 
+            "lastActive" : time.time(), 
             "username" : None, 
             "currSession" : None,
             "sessions" : [], 
             "blockedUsers" : [], 
         })
-        print(f"Added client! Now {len(self._clients)} client(s)")
-    
+            
     def updateLastActive(self, socket): 
         try: 
             client = self.getClientBySocket(socket) 
@@ -97,11 +96,16 @@ class ClientManager():
         client["currSession"] = Session.createSession()
 
     def authenticateClient(self, username, password): 
+        """ Checks if a client has logged in and returns "blocked", "alreadyActive" or "success" """
+
+        # Check if user is blocked
         if username in self._loginAttempts: 
             userInfo = self._loginAttempts.get(username) 
 
             def isBlocked(userInfo):
                 if userInfo.get("status") != "blocked":  return False
+
+                print("Time since user has been blocked: " + str(time.time() - userInfo.get("blockTime")))
                 if time.time() - userInfo.get("blockTime") > self._blockDuration:
                     userInfo["status"] == "unsuccessful"
                     return False
@@ -134,6 +138,7 @@ class ClientManager():
                     "attempts" : 0, 
                     "blockTime" : time.time()
                 }
+                print("User has been blocked at time: " + str(time.time()))
 
         else: 
             self._loginAttempts[username] = { 
@@ -159,6 +164,16 @@ class ClientManager():
 
         return result
 
+    def getSocketsNotBlockedBy(self, clientSocket): 
+        source = self.getClientBySocket(clientSocket) 
+        clientUsername = source["username"] 
+        clientBlockedUsers = source["blockedUsers"]
+        sockets = [] 
+        for client in self._clients: 
+            if not client["username"] in clientBlockedUsers and not (client["username"] == clientUsername): sockets.append(client["socket"]) 
+
+        return sockets 
+        
     def block(self, source, target, action="block"): 
         for credential in self._login_credentials: 
             if credential["username"] == target: 

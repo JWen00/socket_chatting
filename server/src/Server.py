@@ -8,11 +8,11 @@ class Server():
             self._serverSocket.listen(1) 
             print(f"Server listening on {serverName} : {serverPort}...")
         except OSError:
-            print(f"Port busy! Try again in a bit")
+            print(f"Port busy!")
             sys.exit() 
 
         self._blockDuration = blockDuration
-        self._timeout = timeout
+        self._timeout = timeout * 1000 
         self._readList = []
         self._manager = ClientManager(blockDuration) 
 
@@ -33,10 +33,15 @@ class Server():
 
                 # Receiving data from made connections 
                 else: 
-                    information = s.recv(1024)
                     client = self._manager.getClientBySocket(s) 
+                    try: 
+                        information = s.recv(1024)
+                    except ConnectionResetError:
+                        self.broadcast(f'{client["username"]} has left the chat.')
+                        self._readList = [x for x in self._readList if x is not s]
+
                     if information: 
-                        print("Receieved info!")
+                        print("Received info!")
                         command, data = self.decodeReq(information)    
                         print(f"ACK! Command: {command} w/ data {data}")
 
@@ -51,8 +56,8 @@ class Server():
                             client["lastActive"] = time.time()
  
                     else: 
-                        if client and time.time() - client["lastActive"] > self._timeout: 
-                            print(f'Timeout for client: @{client.username}')
+                        if client and (time.time() - client["lastActive"] > self._timeout): 
+                            print(f'Timeout for client: @{client["username"]}')
                             self.closeClientConnection(data = { 
                                 "socket" : socket
                             }) 
@@ -71,17 +76,26 @@ class Server():
             "unblock" : self.unblockUser, 
         }
 
-        if command not in commands: 
+        if not command in commands: 
             return self.constructResponse("unsuccessful", {
                 "command" : command, 
                 "message" : f'Command unknown: {command}'
             })
 
-        return commands[command](data)
+        try: 
+            return commands[command](data)
+        except ErrorMissingData as e: 
+            return self.constructResponse("unsuccessful", {
+                "command" : command, 
+                "message" : f'Missing arguments for {command}.'
+            })
 
     def blockUser(self, data): 
         """ Client Command: Blocks User """ 
 
+        if not data: 
+            raise ErrorMissingData
+        
         source = data["username"] 
         target = data["target"]
 
@@ -101,6 +115,9 @@ class Server():
     def unblockUser(self, data): 
         """ Client Command: Unblocks User """
 
+        if not data: 
+            raise ErrorMissingData 
+
         source = data["username"] 
         target = data["target"]
 
@@ -118,25 +135,30 @@ class Server():
         })
        
     def whoElseSince(self, data): 
-        time = data["time"] 
+        """ Get all active clients since <time>(s) """
+        time = data["time"] * 1000 
         clients = self._manager.getClientsActiveSince(time) 
+        message = f"Users active since {time}(s):\n=======\n"
+        for client in clients: message.append(f' * {client}\n')
+        message.append("=======\n")
         return self.constructResponse("success", { 
             "command" : "whoelsesince",  
-            "users" : clients, 
-            "message" : f"Users who have been active since {time}:"
+            "message" : message
         })
 
     def whoElse(self):
         """ Get all active clients """ 
 
-        activeUsers = self._manager.getActiveClients() 
+        clients = self._manager.getActiveClients() 
+        message = "Users currently active:\n=======\n"
+        for client in clients: message.append(f' * {client}\n')
+        message.append("=======\n")
         return self.constructResponse("success", data ={ 
             "command" : "whoelse", 
-            "users" : activeUsers, 
-            "message" : "Users currently active: " 
+            "message" : message 
         })
 
-    def produceBroadcasts(self, data=None): 
+    def produceBroadcasts(self, data): 
         """ Run broadcast for all clients """ 
 
         self.broadcast(data["message"], data["source"]) 
@@ -147,10 +169,9 @@ class Server():
 
     def closeClientConnection(self, data): 
         """ Closes a client's connection """ 
-        # TODO: Haven't physically socket.close()?? 
         
+        # Note: Closing the socket (.close()) will be handled as an exception
         socket = data["socket"]
-        # self._readList.remove(socket) 
         self.manage.removeClient(socket) 
         return self.constructResponse("success", data = { 
             "command" : "exit", 
@@ -160,13 +181,16 @@ class Server():
     def authenticate(self, loginData): 
         """ Authenticate a client """ 
 
+        if not loginData:
+            raise ErrorMissingData 
+
         username = loginData.get("username") 
         password = loginData.get("password") 
         socket = loginData.get("socket")
         status = self._manager.authenticateClient(username, password) 
         if status == "success": 
             self._manager.updateClient(socket, username) 
-            # self.broadcast(f'{username} is online!', socket) # CHECK TODO:
+            self.broadcast(f'{username} is online!', socket)
             return self.constructResponse("success", { 
                 "command" : "login", 
                 "message" : f"Logged in as {username}",
@@ -181,11 +205,10 @@ class Server():
             "message" : f'Invalid credentials'
         })
         
-    def broadcast(self, clientSocket, message): 
-        broadcaster = self._manager.getClientBySocket(clientSocket) 
-        for client in self._manager.getClientsNotBlockedBy(broadcaster): 
-            client["socket"].send(self.constructResponse("broadcast", {
-            "status" : "receivedBroadcast", 
+    def broadcast(self, message, clientSocket): 
+        for socket in self._manager.getSocketsNotBlockedBy(clientSocket): 
+            socket.send(self.constructResponse("broadcast", {
+            "status" : "broadcast", 
             "message" : message
         }))
 

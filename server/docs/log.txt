@@ -1,2 +1,0 @@
-time userA login  
-time userA logout  

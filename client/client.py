@@ -14,25 +14,29 @@ class Client():
         self._socket = socket 
         
     def listen(self): 
-        # Main thread for listening and second for getting responses
+        """ Main thread for listening and second for getting responses """
+
         t = threading.Thread(target=self.listenToServer) 
         # t.daemone = True 
         t.start()  
 
-        def getCommand(): 
-            command = None 
+        def getCommand():  
             try: 
-                command = input(self._name + " >> ") 
-                command = command.split(" ") 
-            except KeyboardInterrupt:
-                pass 
+                data = input(self._name + " >> ") 
+            except Exception:
+                self._socket.close()
+                print("\nExiting...\n Connection closed.")
+                sys.exit()
             
-            if len(command) > 1: 
-                args = command[1:] 
-                self._socket.send(self.constructReq(command, args)) 
-            else: 
-                self._socket.send(self.constructReq(command))
+            data = data.split(" ") 
 
+            if len(data) > 1: 
+                args = data[1:] 
+                self._socket.send(self.constructReq(data, args)) 
+            else: 
+                self._socket.send(self.constructReq(data))
+
+        
         while True: 
             getCommand() 
 
@@ -42,11 +46,9 @@ class Client():
             response = self._socket.recv(1024) 
             status, data = self.decodeResponse(response) 
 
-            try: 
-                if status == "success": print("Success! " + data.get("message")) 
-                else:  print(f'Command {data.get("command")} unsuccessful\nError message: {data.get("message")}')
-            except KeyError as e: 
-                print("This really shouldn't happen..") 
+            if status == "success": print("Success! " + data.get("message")) 
+            elif status == "broadcast": print("=== Broadcast ===\n" + data.get("message") + "\n")
+            else:  print(f'Command {data.get("command")} unsuccessful\nError message: {data.get("message")}')
 
             if data.get("command") == "exit": 
                 self._socket.close() 
@@ -64,8 +66,13 @@ class Client():
 
     @staticmethod
     def decodeResponse(response): 
-        response = response.decode() 
-        response = json.loads(response) 
+        try: 
+            response = response.decode() 
+            response = json.loads(response) 
+        except: 
+            print("Server Error") 
+            sys.exit()
+            
         status = response.get("status") 
         data = response.get("data") 
         return status, data 
@@ -87,5 +94,5 @@ class Client():
             c = Client(username)
             return c
 
-        print(f'Unsuccessful: " {data.get("message")}') 
+        print(f'Unsuccessful: {data.get("message")}') 
         return None

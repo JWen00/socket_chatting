@@ -1,4 +1,5 @@
 import os 
+import sys
 from socket import *
 from Client import Client
 
@@ -15,8 +16,12 @@ def createClient():
     serverPort = 5000
     serverName = "localhost" 
     clientSocket = socket(AF_INET, SOCK_STREAM) 
-    clientSocket.connect((serverName, serverPort)) 
-    print("Made a connection!") 
+    try: 
+        clientSocket.connect((serverName, serverPort)) 
+        print("Made a connection!") 
+    except ConnectionRefusedError: 
+        print("Server is not up yet.") 
+        sys.exit() 
 
     client = None
     while client == None: 
