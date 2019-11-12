@@ -16,7 +16,7 @@ class Client():
     def listen(self): 
         """ Main thread for listening and second for getting responses """
 
-        t = threading.Thread(target=self.listenToServer) 
+        t = threading.Thread(target=self.listenToOthers) 
         # t.daemone = True 
         t.start()  
 
@@ -25,14 +25,19 @@ class Client():
                 data = input(self._name + " >> ") 
             except Exception:
                 self._socket.close()
-                print("\nExiting...\n Connection closed.")
+                print("\nExiting...\nConnection closed.")
                 sys.exit()
             
             data = data.split(" ") 
 
+            # Commands which do not run through the server: "private" and "stopprivate "
+
             if len(data) > 1: 
+                command = data[0]
                 args = data[1:] 
-                self._socket.send(self.constructReq(data, args)) 
+                # TIHS CODE DOESN"T WORK LOOOL CRRAAAP
+
+                self._socket.send(self.constructReq(command, args)) 
             else: 
                 self._socket.send(self.constructReq(data))
 
@@ -40,21 +45,33 @@ class Client():
         while True: 
             getCommand() 
 
-    def listenToServer(self): 
-        ready = select.select([self._socket], [],[]) 
-        if ready[0]: 
-            response = self._socket.recv(1024) 
-            status, data = self.decodeResponse(response) 
+    def listenToOthers(self): 
+        """ Listen to server, but also to incoming private connections """ 
+        readList = [self._socket, ]
+        while True:
+            ready = select.select([self._socket], [],[]) 
+            if ready[0]: 
+                response = self._socket.recv(1024) 
+                status, data = self.decodeResponse(response) 
 
-            if status == "success": print("Success! " + data.get("message")) 
-            elif status == "broadcast": print("=== Broadcast ===\n" + data.get("message") + "\n")
-            else:  print(f'Command {data.get("command")} unsuccessful\nError message: {data.get("message")}')
+                if data["command"] == "startprivate": 
+                    (host, port) = data["targetInfo"].split("|") 
+                    t = threading.Thread(target=self.startP2P, args=(host, port))
+                    t.start() 
+                    continue
+                elif data["command"] == "exit": 
+                    self._socket.close() 
+                    print("Exiting...\nConnection closed.")
 
-            if data.get("command") == "exit": 
-                self._socket.close() 
-                print("ByeBye! :)") 
-                sys.exit() 
+                if status == "success": print("Success! " + data.get("message")) 
+                elif status == "broadcast": print("=== Broadcast ===\n" + data.get("message") + "\n")
+                else: print(f'Command {data.get("command")} unsuccessful\nError message: {data.get("message")}')
             
+    def startP2P(self, (host, port)): 
+        """ Connect to another client's IP & PORT """
+
+        readList = []
+        readable, writable, errored = select.select(readList, [], []) 
     @staticmethod
     def constructReq(command, data={}): 
         req = {} 

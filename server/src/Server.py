@@ -74,6 +74,7 @@ class Server():
             "whoelsesince" : self.whoElseSince, 
             "block" : self.blockUser, 
             "unblock" : self.unblockUser, 
+            "startprivate" : self.startPrivate, 
         }
 
         if not command in commands: 
@@ -89,6 +90,33 @@ class Server():
                 "command" : command, 
                 "message" : f'Missing arguments for {command}.'
             })
+
+    def startPrivate(self, data): 
+        if not data: 
+            raise ErrorMissingData
+
+        try:
+            target = self._manager.getClientByUsername(data["user"])
+
+            # Checked if blocked
+            if data["source"] in target["blockedUsers"]: 
+                return self.constructResponse("unsuccessful", { 
+                    "command" : data["command"], 
+                    "message" : f"Cannot start private with '{target}' - User unavailable"
+                }) 
+
+            targetInfo = target["socket"].getpeername() 
+            return self.constructResponse("successful", { 
+                "command" : data["command"], 
+                "message" : f"You have received data to start a private connection with {target}",
+                "targetInfo" : targetInfo, 
+            }) 
+        except ErrorClientNotFound as e: 
+            return self.constructResponse("unsuccessful", { 
+                "command" : data["command"], 
+                "message" : f"Cannot start private with '{target}' - User Unknown" 
+            })
+        
 
     def blockUser(self, data): 
         """ Client Command: Blocks User """ 
