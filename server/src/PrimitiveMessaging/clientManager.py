@@ -164,15 +164,27 @@ class ClientManager():
 
         return result
 
-    def getSocketsNotBlockedBy(self, clientSocket): 
+    def getSocketsWhoBlockedClient(self, clientSocket): 
         source = self.getClientBySocket(clientSocket) 
         clientUsername = source["username"] 
-        clientBlockedUsers = source["blockedUsers"]
+    
         sockets = [] 
         for client in self._clients: 
-            if not client["username"] in clientBlockedUsers and not (client["username"] == clientUsername): sockets.append(client["socket"]) 
+            if clientUsername in client["blockedUsers"]:
+                sockets.append(client["socket"])
 
         return sockets 
+
+    def getSocketsNotBlockedBy(self, clientSocket): 
+
+        socketsWhoHaveBlockedClient = self.getSocketsWhoBlockedClient(clientSocket)
+
+        sockets = [] 
+        for client in self._clients:
+            if client["username"] not in socketsWhoHaveBlockedClient: 
+                sockets.append(client["username"]) 
+        return sockets
+        
         
     def block(self, source, target, action="block"): 
         for credential in self._login_credentials: 

@@ -29,24 +29,25 @@ class Client():
                 sys.exit()
             
             data = data.split(" ") 
-
+            command = data[0]
+            args = data[1:] 
+            
             # Commands which do not run through the server: "private" and "stopprivate "
-
-            if len(data) > 1: 
-                command = data[0]
-                args = data[1:] 
-                # TIHS CODE DOESN"T WORK LOOOL CRRAAAP
-
-                self._socket.send(self.constructReq(command, args)) 
+            if command is "private": 
+                pass
+            elif command is "stopprivate": 
+                pass 
             else: 
-                self._socket.send(self.constructReq(data))
-
+                self._socket.send(self.constructReq(command, args)) 
+            
         
         while True: 
             getCommand() 
 
     def listenToOthers(self): 
         """ Listen to server, but also to incoming private connections """ 
+
+        
         readList = [self._socket, ]
         while True:
             ready = select.select([self._socket], [],[]) 
@@ -62,6 +63,7 @@ class Client():
                 elif data["command"] == "exit": 
                     self._socket.close() 
                     print("Exiting...\nConnection closed.")
+                    sys.exit()
 
                 if status == "success": print("Success! " + data.get("message")) 
                 elif status == "broadcast": print("=== Broadcast ===\n" + data.get("message") + "\n")
@@ -73,7 +75,7 @@ class Client():
         readList = []
         readable, writable, errored = select.select(readList, [], []) 
     @staticmethod
-    def constructReq(command, data={}): 
+    def constructReq(command, data): 
         req = {} 
         req["command"] = command 
         req["data"] = data
@@ -100,10 +102,8 @@ class Client():
         username = input("Username: ") 
         password = input("Password: ") 
 
-        req = Client.constructReq("login", data = { 
-            "username" : username, 
-            "password" : password 
-        })
+        req = Client.constructReq("login", [username, password])
+
         clientSocket.send(req) 
         reply = clientSocket.recv(1024)
         status, data = Client.decodeResponse(reply)

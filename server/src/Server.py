@@ -41,13 +41,11 @@ class Server():
                         self._readList = [x for x in self._readList if x is not s]
 
                     if information: 
-                        print("Received info!")
                         command, data = self.decodeReq(information)    
-                        print(f"ACK! Command: {command} w/ data {data}")
 
-                        # Add connectionSocketDataOnto the packet for initial authentication
-                        if command in ["login", "exit"]: data["socket"] = s
-
+                        # Include socket information with every command
+                        if data : data.append(s) 
+                    
                         # Process the command
                         s.send(self.processCommand(command, data))
 
@@ -124,20 +122,21 @@ class Server():
         if not data: 
             raise ErrorMissingData
         
-        source = data["username"] 
-        target = data["target"]
-
         try: 
-            self._manager.block(source, target) 
+            clientSocket = data[-1]
+            clientName = self._manager.getClientBySocket()["username"]
+            targetName = data[0]
+
+            self._manager.block(clientName, targetName) 
             return self.constructResponse("success", {
             "command" : "block", 
-            "message" : f'You have blocked {target}'
+            "message" : f'You have blocked {targetName}'
         })
 
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", { 
                 "command" : "block", 
-                "message" : f'{target} does not exit.'
+                "message" : f'{targetName} does not exit.'
             })
              
     def unblockUser(self, data): 
@@ -146,40 +145,50 @@ class Server():
         if not data: 
             raise ErrorMissingData 
 
-        source = data["username"] 
-        target = data["target"]
-
         try: 
-            self._manager.block(source, target, action="unblock") 
+            clientSocket = data[-1]
+            clientName = self._manager.getClientBySocket()["username"]
+            targetName = data[0]
+            
+            self._manager.block(clientName, targetName, action="unblock") 
             return self.constructResponse("success", {
             "command" : "unblock", 
-            "message" : f"You have unblocked {target}"
+            "message" : f"You have unblocked {targetName}"
         })
 
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", {
             "command" : "unblock", 
-            "message" : f"{target} does not exit."
+            "message" : f"{targetName} does not exit."
         })
        
     def whoElseSince(self, data): 
         """ Get all active clients since <time>(s) """
-        time = data["time"] * 1000 
+
+        time = int(data[0]) * 1000
+        clientSocket = data[-1]
+        clientName = self._manager.getClientBySocket()["username"]
         clients = self._manager.getClientsActiveSince(time) 
+
         message = f"Users active since {time}(s):\n=======\n"
-        for client in clients: message.append(f' * {client}\n')
+        for client in clients: 
+            if client is not clientName: message.append(f' * {client}\n')
         message.append("=======\n")
         return self.constructResponse("success", { 
             "command" : "whoelsesince",  
             "message" : message
         })
 
-    def whoElse(self):
+    def whoElse(self, data):
         """ Get all active clients """ 
+
+        clientSocket = data[-1]
+        clientName = self._manager.getClientBySocket()["username"]
 
         clients = self._manager.getActiveClients() 
         message = "Users currently active:\n=======\n"
-        for client in clients: message.append(f' * {client}\n')
+        for client in clients: 
+            if client is not clientName: message.append(f' * {client}\n')
         message.append("=======\n")
         return self.constructResponse("success", data ={ 
             "command" : "whoelse", 
@@ -189,32 +198,40 @@ class Server():
     def produceBroadcasts(self, data): 
         """ Run broadcast for all clients """ 
 
-        self.broadcast(data["message"], data["source"]) 
+        message = " ".join(data[:-1])
+        clientSocket = data[-1]
+
+        self.broadcast(message, clientSocket) 
+        if len(self._manager.getSocketsWhoBlockedClient(clientSocket)) > 0: 
+            message = "Your message has been broadcasted! [Note that some recipients may not have received your broadcast]" 
+        else: message = "Your message has been broadcasted!"
+
         return self.constructResponse("success", { 
             "command" : "broadcast", 
-            "message" : "Your message has been broadcasted!"  
+            "message" : message 
         })
 
     def closeClientConnection(self, data): 
         """ Closes a client's connection """ 
         
         # Note: Closing the socket (.close()) will be handled as an exception
-        socket = data["socket"]
-        self.manage.removeClient(socket) 
+        clientSocket = data[-1]
+        self._manager.removeClient(clientSocket) 
         return self.constructResponse("success", data = { 
             "command" : "exit", 
             "message" : "You have successfully disconnected" 
         })
 
-    def authenticate(self, loginData): 
+    def authenticate(self, data): 
         """ Authenticate a client """ 
 
-        if not loginData:
+        if not data:
             raise ErrorMissingData 
 
-        username = loginData.get("username") 
-        password = loginData.get("password") 
-        socket = loginData.get("socket")
+        username = data[0] 
+        password = data[1]
+        socket = data[-1]
+
         status = self._manager.authenticateClient(username, password) 
         if status == "success": 
             self._manager.updateClient(socket, username) 
