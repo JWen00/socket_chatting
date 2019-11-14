@@ -44,6 +44,7 @@ class ClientManager():
         self._loginAttempts = {}
         self._blockDuration = blockDuration * 1000
         self._clients = []
+        self._unreadMessages = {} 
 
     def getClients(self): 
         return self.clients
@@ -59,14 +60,29 @@ class ClientManager():
             "blockedUsers" : [], 
         })
             
-    def updateLastActive(self, socket): 
+    def updateLastActive(self, clientSocket): 
         try: 
-            client = self.getClientBySocket(socket) 
+            client = self.getClientBySocket(clientSocket) 
             client["lastActive"] = time.time()
         except ErrorClientNotFound as e: 
             print("Cannot update last active - Client doesn't exit yet") 
             sys.exit()
 
+    def addUnreadMessages(self, messageData): 
+        source = messageData["source"] 
+        target = messageData["target"]
+        message = messageData["message"] 
+
+        if target in self._unreadMessages: 
+            self._unreadMessages["target"].append(f'  <{source}> {message}\n')
+        else: self._unreadMessages["target"] = f'  <{source}> {message}\n'
+
+    def retrieveUnreadMessage(self, username): 
+        if username in self._unreadMessages: 
+            return self._unreadMessages[username] 
+        else: return []
+
+        # TODO WHERE TO SEND IT
     def closeClientSession(self, socket): 
         clientOBJ = self.getClientBySocket(socket) 
         
@@ -183,8 +199,7 @@ class ClientManager():
         for client in self._clients:
             if client["username"] not in socketsWhoHaveBlockedClient: 
                 sockets.append(client["username"]) 
-        return sockets
-        
+        return sockets    
         
     def block(self, source, target, action="block"): 
         for credential in self._login_credentials: 

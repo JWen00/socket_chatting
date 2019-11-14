@@ -5,26 +5,38 @@ import threading
 import json
 
 class Client(): 
-    def __init__(self, name): 
-        self._name = name
-        self._socket = None 
-        self.status = "active"
+    def __init__(self, serverName, serverPort): 
+        try: 
+            self._serverSocket = socket(AF_INET, SOCK_STREAM)
+            self._serverSocket.connect((serverName, serverPort)) 
+            self._serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except ConnectionRefusedError: 
+            print("Server is not up yet") 
+            sys.exit() 
 
-    def bindSocket(self, socket): 
-        self._socket = socket 
+        try: 
+            p2pPort = self._serverSocket.getsockname()[1]
+
+            self._p2pSocket = socket(AF_INET, SOCK_STREAM) 
+            self._p2pSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._p2pSocket.bind((serverName, p2pPort))
+            self._p2pSocket.listen(1) 
+
+        except ConnectionRefusedError: 
+            print("Cannot listen on 0.0.0.0")
+            sys.exit() 
         
     def listen(self): 
         """ Main thread for listening and second for getting responses """
 
         t = threading.Thread(target=self.listenToOthers) 
-        # t.daemone = True 
         t.start()  
 
         def getCommand():  
             try: 
                 data = input(self._name + " >> ") 
             except Exception:
-                self._socket.close()
+                self._serverSocket.close()
                 print("\nExiting...\nConnection closed.")
                 sys.exit()
             
@@ -38,7 +50,7 @@ class Client():
             elif command is "stopprivate": 
                 pass 
             else: 
-                self._socket.send(self.constructReq(command, args)) 
+                self._serverSocket.send(self.constructReq(command, args)) 
             
         
         while True: 
@@ -47,35 +59,49 @@ class Client():
     def listenToOthers(self): 
         """ Listen to server, but also to incoming private connections """ 
 
-        
-        readList = [self._socket, ]
+        readList = [self._serverSocket, self._p2pSocket]
         while True:
-            ready = select.select([self._socket], [],[]) 
-            if ready[0]: 
-                response = self._socket.recv(1024) 
-                status, data = self.decodeResponse(response) 
+            readable, writable, errorable = select.select(readList, [], []) 
+            for connection in readable: 
 
-                if data["command"] == "startprivate": 
-                    (host, port) = data["targetInfo"].split("|") 
-                    t = threading.Thread(target=self.startP2P, args=(host, port))
-                    t.start() 
-                    continue
-                elif data["command"] == "exit": 
-                    self._socket.close() 
-                    print("Exiting...\nConnection closed.")
-                    sys.exit()
+                # Data arrived from server 
+                if connection is self._serverSocket: 
+                    response = self._serverSocket.recv(1024) 
+                    status, data = self.decodeResponse(response) 
 
-                if status == "success": print("Success! " + data.get("message")) 
-                elif status == "broadcast": print("=== Broadcast ===\n" + data.get("message") + "\n")
-                else: print(f'Command {data.get("command")} unsuccessful\nError message: {data.get("message")}')
-            
-    def startP2P(self, (host, port)): 
-        """ Connect to another client's IP & PORT """
+                    if data["command"] == "startprivate": 
+                        pass
+                        
+                        # Make a connection with the given information
+                    elif data["command"] == "exit": 
+                        self._serverSocket.close() 
+                        print("Exiting...\nConnection closed.")
+                        sys.exit()
 
-        readList = []
-        readable, writable, errored = select.select(readList, [], []) 
-    @staticmethod
-    def constructReq(command, data): 
+                    if status == "success": print("Success! " + data["message"])
+                    elif status == "message": print(f'  <{data["source"]}> {data["message"]}')
+                    elif status == "broadcast": print(f"=== Broadcast ===\n{data["message"]}\n")
+                    else: print(f'Command {data["command"]} unsuccessful\nError message: {data["message"]}')
+                
+                # Connection Received from other clients 
+                elif connection is self._p2pSocket: 
+                    newConnection, serverSocketAddr = self._p2pSocket.accept() # Not sure why it's called serverSocketAddr
+                    readList.append(newConnection) 
+                    print(f"Received connection from {serverSocketAddr}")
+
+                # Data received from other clients 
+                else: 
+                    data = connection.recv(1024) 
+                    if not data: 
+                        print(f"Peer connection from {connection.getsockname()} was closed.")
+                        readList.remove(connection)
+                    else: 
+                        status, data =  self.decodeResponse(data) 
+                        if status == "privateMessage": print(data["message"])
+                        # Disregard everything else. 
+
+ 
+    def constructReq(self, command, data): 
         req = {} 
         req["command"] = command 
         req["data"] = data
@@ -83,8 +109,7 @@ class Client():
         req = req.encode() 
         return req 
 
-    @staticmethod
-    def decodeResponse(response): 
+    def decodeResponse(self, response): 
         try: 
             response = response.decode() 
             response = json.loads(response) 
@@ -96,20 +121,11 @@ class Client():
         data = response.get("data") 
         return status, data 
 
-    # Prompt the user to log in
-    @staticmethod
-    def login(clientSocket): 
-        username = input("Username: ") 
-        password = input("Password: ") 
-
-        req = Client.constructReq("login", [username, password])
-
-        clientSocket.send(req) 
-        reply = clientSocket.recv(1024)
-        status, data = Client.decodeResponse(reply)
-        if status == "success": 
-            c = Client(username)
-            return c
-
-        print(f'Unsuccessful: {data.get("message")}') 
-        return None
+    def login(self, username, password): 
+        self._serverSocket.send(self.constructReq("login", [username, password]))
+        reply = self._serverSocket.recv(1024) # Blocking code 
+        status, data = self.decodeResponse(reply)
+        
+        if status == "success": return True
+        print(f'Login unsuccessful: {data.get("message")}') 
+        return False

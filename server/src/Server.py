@@ -14,7 +14,7 @@ class Server():
         self._blockDuration = blockDuration
         self._timeout = timeout * 1000 
         self._readList = []
-        self._manager = ClientManager(blockDuration) 
+        self._manager = ClientManager(blockDuration)
 
     def listen(self): 
         """ Server listens to all incoming information until closed """
@@ -72,7 +72,8 @@ class Server():
             "whoelsesince" : self.whoElseSince, 
             "block" : self.blockUser, 
             "unblock" : self.unblockUser, 
-            "startprivate" : self.startPrivate, 
+            "startprivate" : self.startPrivate,
+            "message" : self.message,  
         }
 
         if not command in commands: 
@@ -89,6 +90,50 @@ class Server():
                 "message" : f'Missing arguments for {command}.'
             })
 
+    def message(self, data): 
+        if not data: 
+            raise ErrorMissingData
+
+        targetName = data[0] 
+        message = data[1:-1]
+        clientSocket = data[-1]
+        clientName = self._manager.getClientBySocket()["username"]
+
+        # Check for blocking
+        socketsWhoBlockedClient = self._manager.getSocketsWhoBlockedClient(clientSocket)
+        if targetName in socketsWhoBlockedClient: 
+            return self.constructResponse("unsuccessful", { 
+                "command" : "message", 
+                "message": f"Unable to reach {targetName}"
+            })
+
+        try: 
+            target = self._manager.getClientByUsername(targetName)
+            targetSocket = target["socket"] 
+            if not targetSocket:  
+                self._manager.addUnreadMessages({ 
+                    "source" : clientName, 
+                    "target" : targetName, 
+                    "message" : message
+                })
+            else: 
+                targetSocket.send(self.constructResponse("message", { 
+                    "message" : f'  <{clientName}> {message}'
+                }))
+
+                return self.constructResponse("successful", { 
+                    "command" : "message", 
+                    "message" : "Your message has been sent."
+                })
+
+        except ErrorClientNotFound as e: 
+            return self.constructResponse("unsuccessful", { 
+                "command" : "message", 
+                "message" : f"User '{targetName}' not found"
+            })
+
+
+        
     def startPrivate(self, data): 
         if not data: 
             raise ErrorMissingData
@@ -236,6 +281,7 @@ class Server():
         if status == "success": 
             self._manager.updateClient(socket, username) 
             self.broadcast(f'{username} is online!', socket)
+            
             return self.constructResponse("success", { 
                 "command" : "login", 
                 "message" : f"Logged in as {username}",
