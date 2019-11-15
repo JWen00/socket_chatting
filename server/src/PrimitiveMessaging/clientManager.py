@@ -198,7 +198,7 @@ class ClientManager():
         sockets = [] 
         for client in self._clients:
             if client["username"] not in socketsWhoHaveBlockedClient: 
-                sockets.append(client["username"]) 
+                sockets.append(client["socket"]) 
         return sockets    
         
     def block(self, source, target, action="block"): 

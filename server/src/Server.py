@@ -37,7 +37,7 @@ class Server():
                     try: 
                         information = s.recv(1024)
                     except ConnectionResetError:
-                        self.broadcast(f'{client["username"]} has left the chat.')
+                        self.broadcast(f'{client["username"]} has left the chat.', s)
                         self._readList = [x for x in self._readList if x is not s]
 
                     if information: 
@@ -56,7 +56,7 @@ class Server():
                     else: 
                         if client and (time.time() - client["lastActive"] > self._timeout): 
                             print(f'Timeout for client: @{client["username"]}')
-                            self.closeClientConnection(data = { 
+                            self.closeClientConnection({ 
                                 "socket" : socket
                             }) 
                             self.broadcast(f'{client["username"]} has left the chat.')
@@ -118,7 +118,8 @@ class Server():
                 })
             else: 
                 targetSocket.send(self.constructResponse("message", { 
-                    "message" : f'  <{clientName}> {message}'
+                    "source" : clientName, 
+                    "message" : message
                 }))
 
                 return self.constructResponse("successful", { 
@@ -138,26 +139,30 @@ class Server():
         if not data: 
             raise ErrorMissingData
 
-        try:
-            target = self._manager.getClientByUsername(data["user"])
+        targetName = data[0]
+        clientSocket = data[-1] 
+        target = self._manager.getClientByUsername(data["user"])
+        clientName = self._manager.getClientBySocket()["username"]
 
+        try:
             # Checked if blocked
-            if data["source"] in target["blockedUsers"]: 
+            if clientName in target["blockedUsers"]: 
                 return self.constructResponse("unsuccessful", { 
-                    "command" : data["command"], 
-                    "message" : f"Cannot start private with '{target}' - User unavailable"
+                    "command" : "startPrivate", 
+                    "message" : f"Cannot start private with '{targetName}' - User unavailable"
                 }) 
 
-            targetInfo = target["socket"].getpeername() 
+
             return self.constructResponse("successful", { 
-                "command" : data["command"], 
-                "message" : f"You have received data to start a private connection with {target}",
-                "targetInfo" : targetInfo, 
+                "command" : "startPrivate", 
+                "message" : f"Ready to start a private connection with {targetName}",
+                "targetAddress" : target["socket"].getpeername() , 
             }) 
+            
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", { 
-                "command" : data["command"], 
-                "message" : f"Cannot start private with '{target}' - User Unknown" 
+                "command" : "startPrivate", 
+                "message" : f"Cannot start private with '{targetName}' - User Unknown" 
             })
         
 
@@ -298,10 +303,11 @@ class Server():
         
     def broadcast(self, message, clientSocket): 
         for socket in self._manager.getSocketsNotBlockedBy(clientSocket): 
-            socket.send(self.constructResponse("broadcast", {
-            "status" : "broadcast", 
-            "message" : message
-        }))
+            if socket is not clientSocket: 
+                socket.send(self.constructResponse("broadcast", {
+                "status" : "broadcast", 
+                "message" : message
+            }))
 
     def constructResponse(self, status, data={}): 
         response = {} 
