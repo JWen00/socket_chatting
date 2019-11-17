@@ -38,13 +38,14 @@ class Server():
                         information = s.recv(1024)
                     except ConnectionResetError:
                         self.broadcast(f'{client["username"]} has left the chat.', s)
-                        self._readList = [x for x in self._readList if x is not s]
+                        self._readList.remove(s) 
+                        # self._readList = [x for x in self._readList if x is not s]
 
                     if information: 
                         command, data = self.decodeReq(information)    
 
                         # Include socket information with every command
-                        if data : data.append(s) 
+                        data.append(s) 
                     
                         # Process the command
                         s.send(self.processCommand(command, data))
@@ -95,9 +96,9 @@ class Server():
             raise ErrorMissingData
 
         targetName = data[0] 
-        message = data[1:-1]
+        message = " ".join(data[1:-1])
         clientSocket = data[-1]
-        clientName = self._manager.getClientBySocket()["username"]
+        clientName = self._manager.getClientBySocket(clientSocket)["username"]
 
         # Check for blocking
         socketsWhoBlockedClient = self._manager.getSocketsWhoBlockedClient(clientSocket)
@@ -115,14 +116,20 @@ class Server():
                     "source" : clientName, 
                     "target" : targetName, 
                     "message" : message
+                }) 
+
+                return self.constructResponse("success", { 
+                    "command" : "message", 
+                    "message" : f'Your message will be sent when {targetName} is online.'
                 })
+
             else: 
                 targetSocket.send(self.constructResponse("message", { 
                     "source" : clientName, 
                     "message" : message
                 }))
 
-                return self.constructResponse("successful", { 
+                return self.constructResponse("success", { 
                     "command" : "message", 
                     "message" : "Your message has been sent."
                 })
@@ -132,17 +139,15 @@ class Server():
                 "command" : "message", 
                 "message" : f"User '{targetName}' not found"
             })
-
-
-        
+  
     def startPrivate(self, data): 
         if not data: 
             raise ErrorMissingData
 
         targetName = data[0]
-        clientSocket = data[-1] 
-        target = self._manager.getClientByUsername(data["user"])
-        clientName = self._manager.getClientBySocket()["username"]
+        clientSocket = data[-1]
+        target = self._manager.getClientByUsername(targetName)
+        clientName = self._manager.getClientBySocket(clientSocket)
 
         try:
             # Checked if blocked
@@ -165,7 +170,6 @@ class Server():
                 "message" : f"Cannot start private with '{targetName}' - User Unknown" 
             })
         
-
     def blockUser(self, data): 
         """ Client Command: Blocks User """ 
 
@@ -217,13 +221,13 @@ class Server():
 
         time = int(data[0]) * 1000
         clientSocket = data[-1]
-        clientName = self._manager.getClientBySocket()["username"]
+        clientName = self._manager.getClientBySocket(clientSocket)
         clients = self._manager.getClientsActiveSince(time) 
 
         message = f"Users active since {time}(s):\n=======\n"
         for client in clients: 
-            if client is not clientName: message.append(f' * {client}\n')
-        message.append("=======\n")
+            if client is not clientName: message += f' * {client}\n'
+        message += "=======\n"
         return self.constructResponse("success", { 
             "command" : "whoelsesince",  
             "message" : message
@@ -231,15 +235,14 @@ class Server():
 
     def whoElse(self, data):
         """ Get all active clients """ 
-
         clientSocket = data[-1]
-        clientName = self._manager.getClientBySocket()["username"]
+        clientName = self._manager.getClientBySocket(clientSocket)
 
         clients = self._manager.getActiveClients() 
         message = "Users currently active:\n=======\n"
         for client in clients: 
-            if client is not clientName: message.append(f' * {client}\n')
-        message.append("=======\n")
+            if client is not clientName: message += f' * {client}\n'
+        message += "=======\n"
         return self.constructResponse("success", data ={ 
             "command" : "whoelse", 
             "message" : message 
@@ -266,7 +269,7 @@ class Server():
         
         # Note: Closing the socket (.close()) will be handled as an exception
         clientSocket = data[-1]
-        self._manager.removeClient(clientSocket) 
+        self._manager.closeClientSession(clientSocket) 
         return self.constructResponse("success", data = { 
             "command" : "exit", 
             "message" : "You have successfully disconnected" 
@@ -290,6 +293,7 @@ class Server():
             return self.constructResponse("success", { 
                 "command" : "login", 
                 "message" : f"Logged in as {username}",
+                "unreadMessages" : self._manager.retrieveUnreadMessage(username)
             })
         elif status == "blocked": return self.constructResponse("unsuccessful", { 
             "message": f"You've been blocked for {self._blockDuration}(s). Please try again later", 
@@ -302,7 +306,10 @@ class Server():
         })
         
     def broadcast(self, message, clientSocket): 
-        for socket in self._manager.getSocketsNotBlockedBy(clientSocket): 
+        """ Send message to all applicable clients """ 
+
+        sendableSockets = self._manager.getSocketsNotBlockedBy(clientSocket)
+        for socket in sendableSockets: 
             if socket is not clientSocket: 
                 socket.send(self.constructResponse("broadcast", {
                 "status" : "broadcast", 

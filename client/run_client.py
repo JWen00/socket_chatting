@@ -9,14 +9,15 @@ from Client import Client
 
 # serverIP = os.argv[1]
 # serverPort = os.argv[2]
+
 serverName = "localhost" 
 serverPort = 5000
-c = Client(serverName, serverPort) 
 
+c = Client(serverName, serverPort) 
 loginSuccess = False
 while not loginSuccess:
     username = input("Username: ") 
     password = input("Password: ") 
-    loginSuccess =  c.login() 
+    loginSuccess =  c.login(username, password) 
 
 c.listen()

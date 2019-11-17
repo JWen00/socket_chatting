@@ -59,13 +59,21 @@ class ClientManager():
             "sessions" : [], 
             "blockedUsers" : [], 
         })
-            
+
+    def updateClient(self, socket, username): 
+        """ Updates client information after successful login """
+
+        client = self.getClientBySocket(socket) 
+        client["username"] = username 
+        client["lastActive"] = time.time()
+        client["currSession"] = Session.createSession()
+         
     def updateLastActive(self, clientSocket): 
         try: 
             client = self.getClientBySocket(clientSocket) 
             client["lastActive"] = time.time()
         except ErrorClientNotFound as e: 
-            print("Cannot update last active - Client doesn't exit yet") 
+            print("Cannot update last active - Client doesn't exist yet") 
             sys.exit()
 
     def addUnreadMessages(self, messageData): 
@@ -74,42 +82,49 @@ class ClientManager():
         message = messageData["message"] 
 
         if target in self._unreadMessages: 
-            self._unreadMessages["target"].append(f'  <{source}> {message}\n')
-        else: self._unreadMessages["target"] = f'  <{source}> {message}\n'
+            self._unreadMessages[target].append(f'  <Message from {source}> {message}\n')
+        else: self._unreadMessages[target] = [f'  <Message from {source}> {message}\n']
 
     def retrieveUnreadMessage(self, username): 
         if username in self._unreadMessages: 
             return self._unreadMessages[username] 
         else: return []
 
-        # TODO WHERE TO SEND IT
     def closeClientSession(self, socket): 
-        clientOBJ = self.getClientBySocket(socket) 
-        
-        if not clientOBJ["currSession"]: raise ErrorClientNotFound 
+        """ Manage client's session when socket disconnects """
 
-        clientOBJ["currSession"].endSession() 
-        oldSession = clientOBJ["currSession"] 
-        clientOBJ["sessions"].append(oldSession)
-        clientOBJ["currSession"] = None 
-        clientOBJ["status"] = "inactive" 
-        clientOBJ["socket"] = None 
-            
+        try: 
+            client = self.getClientBySocket(socket) 
+
+            # Client never logged in
+            if client["currSession"] == None: return
+
+            client["currSession"].endSession() 
+            oldSession = client["currSession"] 
+            client["sessions"].append(oldSession)
+            client["currSession"] = None 
+            client["status"] = "inactive" 
+            client["socket"] = None 
+
+        except ErrorClientNotFound: 
+            return 
+
     def getClientByUsername(self, username): 
         for client in self._clients: 
             if client["username"] == username: return client 
+        
+        for login in self._login_credentials: 
+            if login["username"] == username: 
+                tempClient = { 
+                    "socket" : None, 
+                } 
+                return tempClient 
         raise ErrorClientNotFound
 
     def getClientBySocket(self, socket): 
         for client in self._clients: 
             if client["socket"] == socket: return client 
         raise ErrorClientNotFound
-
-    def updateClient(self, socket, username): 
-        client = self.getClientBySocket(socket) 
-        client["username"] = username 
-        client["lastActive"] = time.time()
-        client["currSession"] = Session.createSession()
 
     def authenticateClient(self, username, password): 
         """ Checks if a client has logged in and returns "blocked", "alreadyActive" or "success" """
@@ -132,7 +147,7 @@ class ClientManager():
         # Check if user is active
         try: 
             client = self.getClientByUsername(username) 
-            return "alreadyActive"
+            if client["socket"]: return "alreadyActive"
         except ErrorClientNotFound as e: 
             pass
 
@@ -142,7 +157,7 @@ class ClientManager():
 
                 # Delete previous attempts, if any
                 if username in self._loginAttempts: del self._loginAttempts[username]
-                print("Login success for user: " + username)
+                print(f'{username} has logged on')
                 return "success"
 
         # Incorrect Login
@@ -154,7 +169,7 @@ class ClientManager():
                     "attempts" : 0, 
                     "blockTime" : time.time()
                 }
-                print("User has been blocked at time: " + str(time.time()))
+                print("{username} has been blocked at time: " + str(time.time()))
 
         else: 
             self._loginAttempts[username] = { 
@@ -192,16 +207,15 @@ class ClientManager():
         return sockets 
 
     def getSocketsNotBlockedBy(self, clientSocket): 
-
         socketsWhoHaveBlockedClient = self.getSocketsWhoBlockedClient(clientSocket)
-
         sockets = [] 
         for client in self._clients:
-            if client["username"] not in socketsWhoHaveBlockedClient: 
+            if client["username"] not in socketsWhoHaveBlockedClient and client["socket"] is not None: 
                 sockets.append(client["socket"]) 
         return sockets    
         
     def block(self, source, target, action="block"): 
+
         for credential in self._login_credentials: 
             if credential["username"] == target: 
                 t = self.getClientByUsername(source)
