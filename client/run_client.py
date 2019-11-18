@@ -16,8 +16,9 @@ serverPort = 5000
 try: 
     c = Client(serverName, serverPort) 
 except FileNotFoundError: 
-    sys.exit()
     
+    sys.exit()
+
 loginSuccess = False
 while not loginSuccess:
     username = input("Username: ") 

@@ -8,11 +8,11 @@ class Session():
 
     @staticmethod
     def createSession(): 
-        return Session(time.time())
+        return Session(time.monotonic())
     
     def endSession(self): 
         self.status = "offline" 
-        self.sessionEnd = time.time() 
+        self.sessionEnd = time.monotonic() 
 
     def isSessionWithin(self, time): 
         if self.status == "active" or self.sessionEnd >= time: 

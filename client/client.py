@@ -51,19 +51,23 @@ class Client():
             else: self._serverSocket.send(self.constructReq(command, args)) 
 
         def listenToOthers(): 
-            readable, writable, errorable = select.select(readList, [], []) 
+            readable, writable, errorable = select.select(readList, [], [], 1) 
             for connection in readable: 
 
                 # Data arrived from server 
                 if connection is self._serverSocket: 
-                    response = connection.recv(1024) 
-                    status, data = self.decodeResponse(response) 
+                    try: 
+                        response = connection.recv(1024) 
+                        status, data = self.decodeResponse(response) 
+                    except ConnectionResetError: 
+                        print("Server has shut down. Exiting...")
+                        sys.exit()
 
                     if status == "success": print("\nSuccess! " + data["message"])
                     elif status == "message": print(f'\n  <{data["source"]}> {data["message"]}')
                     elif status == "broadcast": print(f'\n=== Broadcast ===\n{data["message"]}\n')
                     elif status == "serverMessage": print(f'\n -- Message from Server: {data["message"]} --')
-                    else: print(f'\nCommand {data["command"]} unsuccessful. {data["message"]}')
+                    else: print(f'Command {data["command"]} unsuccessful. {data["message"]}')
                 
                     if status == "success" and data["command"] == "startPrivate": 
                         try: 

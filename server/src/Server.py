@@ -12,7 +12,7 @@ class Server():
             sys.exit() 
 
         self._blockDuration = blockDuration
-        self._timeout = timeout * 1000 
+        self._timeout = timeout
         self._readList = []
         self._manager = ClientManager(blockDuration)
 
@@ -52,10 +52,10 @@ class Server():
 
                         # Update the lastActive 
                         if client:
-                            client["lastActive"] = time.time()
+                            client["lastActive"] = time.monotonic()
  
                     else: 
-                        if client and (time.time() - client["lastActive"] > self._timeout): 
+                        if client and (time.monotonic() - client["lastActive"] > self._timeout): 
                             print(f'Timeout for client: @{client["username"]}')
                             self.closeClientConnection({ 
                                 "socket" : socket
@@ -95,80 +95,90 @@ class Server():
         if not data: 
             raise ErrorMissingData
 
-        targetName = data[0] 
-        message = " ".join(data[1:-1])
-        clientSocket = data[-1]
-        clientName = self._manager.getClientBySocket(clientSocket)["username"]
+        try:
+            message = " ".join(data[1:-1])
+            clientSocket = data[-1]
+            targetName = data[0] 
 
-        # Check for blocking
-        socketsWhoBlockedClient = self._manager.getSocketsWhoBlockedClient(clientSocket)
-        if targetName in socketsWhoBlockedClient: 
+            client = self._manager.getClientBySocket(clientSocket)
+            clientName = client["username"]
+            target = self._manager.getClientByUsername(targetName)
+        except ErrorClientNotFound: 
             return self.constructResponse("unsuccessful", { 
                 "command" : "message", 
-                "message": f"Unable to reach {targetName}"
+                "message" : f"User '{targetName}' not found."
             })
 
-        try: 
-            target = self._manager.getClientByUsername(targetName)
-            targetSocket = target["socket"] 
-            if not targetSocket:  
-                self._manager.addUnreadMessages({ 
+
+        # Target blocked or client blocked (2-way) 
+        if targetName in client["blockedUsers"] or clientName in target["blockedUsers"]: 
+            return self.constructResponse("unsuccessful", { 
+                "command" : "message", 
+                "message" : f'Unable to reach {targetName}'
+            })
+
+        # Target Offline
+        if not target["socket"]: 
+            self._manager.addUnreadMessages({ 
                     "source" : clientName, 
                     "target" : targetName, 
                     "message" : message
                 }) 
 
-                return self.constructResponse("success", { 
-                    "command" : "message", 
-                    "message" : f'Your message will be sent when {targetName} is online.'
-                })
-
-            else: 
-                targetSocket.send(self.constructResponse("message", { 
-                    "source" : clientName, 
-                    "message" : message
-                }))
-
-                return self.constructResponse("success", { 
-                    "command" : "message", 
-                    "message" : "Your message has been sent."
-                })
-
-        except ErrorClientNotFound as e: 
-            return self.constructResponse("unsuccessful", { 
+            return self.constructResponse("success", { 
                 "command" : "message", 
-                "message" : f"User '{targetName}' not found"
+                "message" : f'Your message will be sent when {targetName} is online.'
             })
-  
+        
+        target["socket"].send(self.constructResponse("message", { 
+                "source" : clientName, 
+                "message" : message
+            }))
+
+        return self.constructResponse("success", { 
+            "command" : "message", 
+            "message" : f"Your message to {targetName} has been sent."
+        })
+
+
     def startPrivate(self, data): 
         if not data: 
             raise ErrorMissingData
 
         targetName = data[0]
         clientSocket = data[-1]
-        target = self._manager.getClientByUsername(targetName)
-        clientName = self._manager.getClientBySocket(clientSocket)
 
         try:
-            # Checked if blocked
-            if clientName in target["blockedUsers"]: 
-                return self.constructResponse("unsuccessful", { 
-                    "command" : "startPrivate", 
-                    "message" : f"Cannot start private with '{targetName}' - User unavailable"
-                }) 
+            target = self._manager.getClientByUsername(targetName)
+            clientName = self._manager.getClientBySocket(clientSocket)
 
-
-            return self.constructResponse("successful", { 
-                "command" : "startPrivate", 
-                "message" : f"Ready to start a private connection with {targetName}",
-                "targetAddress" : target["socket"].getpeername() , 
-            }) 
-            
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", { 
                 "command" : "startPrivate", 
                 "message" : f"Cannot start private with '{targetName}' - User Unknown" 
             })
+
+        # Check if target is offline 
+        if not target["socket"]: 
+            return self.constructResponse("unsuccessful", { 
+                "command" : "startPrivate", 
+                "message" : f"Cannot start private with '{targetName}' - User offline"
+            }) 
+
+        # Checked if blocked
+        if clientName in target["blockedUsers"]: 
+            return self.constructResponse("unsuccessful", { 
+                "command" : "startPrivate", 
+                "message" : f"Cannot start private with '{targetName}' - User unavailable"
+            }) 
+
+
+        return self.constructResponse("success", { 
+            "command" : "startPrivate", 
+            "message" : f"Ready to start a private connection with {targetName}",
+            "targetAddress" : target["socket"].getpeername(), 
+        }) 
+            
         
     def blockUser(self, data): 
         """ Client Command: Blocks User """ 
@@ -178,14 +188,14 @@ class Server():
         
         try: 
             clientSocket = data[-1]
-            clientName = self._manager.getClientBySocket()["username"]
+            clientName = self._manager.getClientBySocket(clientSocket)["username"]
             targetName = data[0]
 
             self._manager.block(clientName, targetName) 
             return self.constructResponse("success", {
-            "command" : "block", 
-            "message" : f'You have blocked {targetName}'
-        })
+                "command" : "block", 
+                "message" : f'You have blocked {targetName}'
+            })
 
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", { 
@@ -201,28 +211,28 @@ class Server():
 
         try: 
             clientSocket = data[-1]
-            clientName = self._manager.getClientBySocket()["username"]
+            clientName = self._manager.getClientBySocket(clientSocket)["username"]
             targetName = data[0]
             
-            self._manager.block(clientName, targetName, action="unblock") 
-            return self.constructResponse("success", {
-            "command" : "unblock", 
-            "message" : f"You have unblocked {targetName}"
-        })
-
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", {
             "command" : "unblock", 
             "message" : f"{targetName} does not exit."
         })
-       
+
+        self._manager.block(clientName, targetName, action="unblock") 
+        return self.constructResponse("success", {
+            "command" : "unblock", 
+            "message" : f"You have unblocked {targetName}"
+        })
+    
     def whoElseSince(self, data): 
         """ Get all active clients since <time>(s) """
 
         time = int(data[0]) * 1000
         clientSocket = data[-1]
         clientName = self._manager.getClientBySocket(clientSocket)
-        clients = self._manager.getClientsActiveSince(time) 
+        clients = self._manager.getActiveClients(time) 
 
         message = f"Users active since {time}(s):\n=======\n"
         for client in clients: 
