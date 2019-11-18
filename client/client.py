@@ -30,10 +30,8 @@ class Client():
         self.username = None 
         
     def listen(self): 
-        """ Main thread for listening and second for getting responses """
-
-        t = threading.Thread(target=self.listenToOthers) 
-        t.start()  
+        """ Listening getting responses """
+        readList = [self._serverSocket, self._p2pSocket]
 
         def getCommand():  
             try: 
@@ -51,15 +49,8 @@ class Client():
             if command is "private": self.privateMessage(args[0], " ".join(args[1:]))
             elif command is "stopprivate": self.stopPrivateMessage(arg[0])
             else: self._serverSocket.send(self.constructReq(command, args)) 
-            
-        while True: 
-            getCommand() 
 
-    def listenToOthers(self): 
-        """ Listen to server, but also to incoming private connections """ 
-
-        readList = [self._serverSocket, self._p2pSocket]
-        while True:
+        def listenToOthers(): 
             readable, writable, errorable = select.select(readList, [], []) 
             for connection in readable: 
 
@@ -72,9 +63,9 @@ class Client():
                     elif status == "message": print(f'\n  <{data["source"]}> {data["message"]}')
                     elif status == "broadcast": print(f'\n=== Broadcast ===\n{data["message"]}\n')
                     elif status == "serverMessage": print(f'\n -- Message from Server: {data["message"]} --')
-                    else: print(f'\nCommand {data["command"]} unsuccessful. Error message: {data["message"]}')
+                    else: print(f'\nCommand {data["command"]} unsuccessful. {data["message"]}')
                 
-                    if status == "success" and data["command"] == "startprivate": 
+                    if status == "success" and data["command"] == "startPrivate": 
                         try: 
                             print(f'Connecting to peer ({data["target"]}) @{data["targetAddress"]}...')
                             newPeerConnection = socket.socket(AF_INET, SOCK_STREAM) 
@@ -88,7 +79,7 @@ class Client():
 
                         
                     elif status == "success" and data["command"] == "exit": 
-                        # self._serverSocket.close() # TODO: HM><><><><><><><><<><><><><<
+                        # self._serverSocket.close() # TODO:
                         print("Exiting...\nConnection closed.")
                         sys.exit()
 
@@ -112,8 +103,14 @@ class Client():
                         status, data =  self.decodeResponse(data) 
                         if connection not in self.privateChats:
                             self.privateChats[data["source"]] = connection
-                        if status == "privateMessage": print(f'  P <<{data["source"]}>> {data["message"]}')
+                        if status == "privateMessage": print(f'  PRIVATE <<{data["source"]}>> {data["message"]}')
                         # Disregard everything else. 
+
+        while True: 
+            getCommand() 
+            listenToOthers()
+
+        
 
     def login(self, username, password): 
         self._serverSocket.send(self.constructReq("login", [username, password]))
@@ -126,10 +123,10 @@ class Client():
 
             # User has unread messages 
             if len(data["unreadMessages"]) > 0: 
-                print("============================")
+                print("============================\n")
                 print(f'| You have {len(data["unreadMessages"])} unread messages')
                 for message in data["unreadMessages"]: 
-                    print(f'| {message}')
+                    print(f'| {message}\n')
                 print("============================")
             return True
         print(f'Login unsuccessful: {data.get("message")}') 

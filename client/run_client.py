@@ -13,7 +13,11 @@ from Client import Client
 serverName = "localhost" 
 serverPort = 5000
 
-c = Client(serverName, serverPort) 
+try: 
+    c = Client(serverName, serverPort) 
+except FileNotFoundError: 
+    sys.exit()
+    
 loginSuccess = False
 while not loginSuccess:
     username = input("Username: ") 
