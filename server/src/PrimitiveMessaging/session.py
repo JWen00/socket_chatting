@@ -14,11 +14,10 @@ class Session():
         self.status = "offline" 
         self.sessionEnd = time.monotonic() 
 
-    def isSessionWithin(self, time): 
-        if self.status == "active" or self.sessionEnd >= time: 
-            return True
+    def isSessionWithin(self, time):
+        if (time.monotonic() - time) < self.sessionStart: 
+            return True 
         return False
-        
 
 
 

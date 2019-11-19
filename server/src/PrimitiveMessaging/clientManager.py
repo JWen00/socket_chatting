@@ -19,6 +19,7 @@ class ClientManager():
         data = None
         with open("docs/credentials.txt", "r") as f: 
             data = f.read().splitlines()
+
         if not data: 
             print("Missing credentails file.")
             raise FileNotFoundError 
@@ -52,25 +53,11 @@ class ClientManager():
         self._blockDuration = blockDuration 
         self._unreadMessages = {} 
 
-    def getClients(self): 
-        return self.clients
-
-    def addClient(self, socket):
-        self._clients.append({ 
-            "socket" : socket, 
-            "status" : "active", 
-            "lastActive" : time.monotonic(), 
-            "username" : None, 
-            "currSession" : None,
-            "sessions" : [], 
-            "blockedUsers" : [], 
-        })
-
     def updateClient(self, socket, username): 
         """ Updates client information after successful login """
 
-        client = self.getClientBySocket(socket) 
-        client["username"] = username 
+        client = self.getClientByUsername(username) 
+        client["socket"] = socket
         client["lastActive"] = time.monotonic()
         client["currSession"] = Session.createSession()
          
@@ -88,8 +75,8 @@ class ClientManager():
         message = messageData["message"] 
 
         if target in self._unreadMessages: 
-            self._unreadMessages[target].append(f'  <Message from {source}> {message}')
-        else: self._unreadMessages[target] = [f'  <Message from {source}> {message}']
+            self._unreadMessages[target].append(f' <Message from {source}> {message}')
+        else: self._unreadMessages[target] = [f' <Message from {source}> {message}']
 
     def retrieveUnreadMessage(self, username): 
         if username in self._unreadMessages: 
@@ -124,7 +111,8 @@ class ClientManager():
     def getClientBySocket(self, socket): 
         for client in self._clients: 
             if client["socket"] == socket: return client 
-        raise ErrorClientNotFound
+        
+        return None
 
     def authenticateClient(self, username, password): 
         """ Checks if a client has logged in and returns "blocked", "alreadyActive" or "success" """
@@ -174,11 +162,13 @@ class ClientManager():
     def getActiveClients(self, time=None): 
         result = []
         for client in self._clients: 
-            if client["status"] == "active": result.append(client["username"]) 
-
             if time: 
                 for session in client["sessions"]: 
-                    if session.isSessionWithin(time): result.append(client["username"]) 
+                    if session.isSessionWithin(time): 
+                        result.append(client["username"]) 
+                        continue
+            else: 
+                if client["status"] == "active": result.append(client["username"]) 
 
         return result 
 

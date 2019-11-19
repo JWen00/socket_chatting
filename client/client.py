@@ -63,11 +63,11 @@ class Client():
                         print("Server has shut down. Exiting...")
                         sys.exit()
 
-                    if status == "success": print("\nSuccess! " + data["message"])
+                    if status == "success": print(f'{data["message"]}')
                     elif status == "message": print(f'\n  <{data["source"]}> {data["message"]}')
-                    elif status == "broadcast": print(f'\n=== Broadcast ===\n{data["message"]}\n')
+                    elif status == "broadcast": print(f'  <<Broadcast>> {data["message"]}\n')
                     elif status == "serverMessage": print(f'\n -- Message from Server: {data["message"]} --')
-                    else: print(f'Command {data["command"]} unsuccessful. {data["message"]}')
+                    else: print(f'Command "{data["command"]}" unsuccessful. {data["message"]}')
                 
                     if status == "success" and data["command"] == "startPrivate": 
                         try: 
@@ -114,26 +114,28 @@ class Client():
             getCommand() 
             listenToOthers()
 
-        
-
     def login(self, username, password): 
+        """ Authenticates a client """ 
+
         self._serverSocket.send(self.constructReq("login", [username, password]))
-        reply = self._serverSocket.recv(1024) # Blocking code 
+        reply = self._serverSocket.recv(1024) 
         status, data = self.decodeResponse(reply)
         
         if status == "success": 
             self._username = username
-            print("Login Success!")
 
             # User has unread messages 
             if len(data["unreadMessages"]) > 0: 
                 print("============================\n")
                 print(f'| You have {len(data["unreadMessages"])} unread messages')
                 for message in data["unreadMessages"]: 
-                    print(f'| {message}\n')
+                    print(f'|{message}\n')
                 print("============================")
             return True
-        print(f'Login unsuccessful: {data.get("message")}') 
+
+        print(f'Login unsuccessful. {data.get("message")}') 
+        if "You've been blocked" in data["message"]: 
+            sys.exit()
         return False
 
     def privateMessage(self, target, message): 
@@ -150,7 +152,7 @@ class Client():
         try: 
             targetSocket = self._privateChats[target]
             # targetSocket.close() # ISSUE: File descriptor Error
-            del self._privateChats[privateChat]
+            del self._privateChats[target]
             print(f'Chat with {target} closed.')
         except KeyError: 
             print(f'No private chat exists for {target}')

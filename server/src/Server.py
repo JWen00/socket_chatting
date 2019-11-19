@@ -27,40 +27,37 @@ class Server():
                 # Receiving new connections 
                 if s is self._serverSocket: 
                     connection, addr = self._serverSocket.accept() 
-                    self._manager.addClient(connection) 
                     self._readList.append(connection) 
                     print("New connection @" + str(addr))
 
                 # Receiving data from made connections 
                 else: 
-                    client = self._manager.getClientBySocket(s) 
                     try: 
+                        client = self._manager.getClientBySocket(s) 
                         information = s.recv(1024)
                     except ConnectionResetError:
-                        self.broadcast(f'{client["username"]} has left the chat.', s)
+                        if client: self.broadcast(f'{client["username"]} has left the chat.', s) 
                         self._readList.remove(s) 
-                        # self._readList = [x for x in self._readList if x is not s]
-
+                    
                     if information: 
                         command, data = self.decodeReq(information)    
-
-                        # Include socket information with every command
                         data.append(s) 
-                    
-                        # Process the command
                         s.send(self.processCommand(command, data))
 
                         # Update the lastActive 
                         if client:
+                            print(f'{client["username"]}s last active time is now {time.monotonic()}')
                             client["lastActive"] = time.monotonic()
  
                     else: 
+                        # Client has no information and they already logged out 
+                        if client and client["lastActive"] == None: self.broadcast(f'{client["username"]} has left the chat.')
+                        
+                        # Client has timed out
                         if client and (time.monotonic() - client["lastActive"] > self._timeout): 
                             print(f'Timeout for client: @{client["username"]}')
-                            self.closeClientConnection({ 
-                                "socket" : socket
-                            }) 
-                            self.broadcast(f'{client["username"]} has left the chat.')
+                            self.closeClientConnection({"socket" : socket}) 
+                            
 
     def processCommand(self, command, data): 
         """ Redirects client to appropriate command """ 
@@ -140,7 +137,6 @@ class Server():
             "message" : f"Your message to {targetName} has been sent."
         })
 
-
     def startPrivate(self, data): 
         if not data: 
             raise ErrorMissingData
@@ -176,10 +172,10 @@ class Server():
         return self.constructResponse("success", { 
             "command" : "startPrivate", 
             "message" : f"Ready to start a private connection with {targetName}",
+            "target" : targetName,
             "targetAddress" : target["socket"].getpeername(), 
         }) 
-            
-        
+                  
     def blockUser(self, data): 
         """ Client Command: Blocks User """ 
 
@@ -234,10 +230,10 @@ class Server():
         clientName = self._manager.getClientBySocket(clientSocket)
         clients = self._manager.getActiveClients(time) 
 
-        message = f"Users active since {time}(s):\n=======\n"
+        message = f"Users active since {time}(s):\n===========\n"
         for client in clients: 
             if client is not clientName: message += f' * {client}\n'
-        message += "=======\n"
+        message += "===========\n"
         return self.constructResponse("success", { 
             "command" : "whoelsesince",  
             "message" : message
@@ -306,7 +302,7 @@ class Server():
                 "unreadMessages" : self._manager.retrieveUnreadMessage(username)
             })
         elif status == "blocked": return self.constructResponse("unsuccessful", { 
-            "message": f"You've been blocked for {self._blockDuration}(s). Please try again later", 
+            "message": f"You've been blocked, please try in {self._blockDuration}(s).", 
         })
         elif status == "alreadyActive" : return self.constructResponse("unsuccessful", { 
             "message" : "You're already logged in elsewhere."
