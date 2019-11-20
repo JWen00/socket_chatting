@@ -88,18 +88,15 @@ class ClientManager():
 
         try: 
             client = self.getClientBySocket(socket) 
-
-            # Client never logged in
-            if client["currSession"] == None: return
-
             client["currSession"].endSession() 
             oldSession = client["currSession"] 
             client["sessions"].append(oldSession)
             client["currSession"] = None 
             client["status"] = "inactive" 
-            client["socket"] = None 
 
+            print(f'Closing client session, old session: {client["sessions"]}')
         except ErrorClientNotFound: 
+            print("Client socket not found")
             return 
 
     def getClientByUsername(self, username): 
@@ -120,7 +117,7 @@ class ClientManager():
         try: 
             # User already active
             client = self.getClientByUsername(username)
-            if client["socket"]: return "alreadyActive"
+            if client["status"] == "inactive": return "alreadyActive"
         except ErrorClientNotFound: 
             pass 
 
@@ -172,24 +169,23 @@ class ClientManager():
 
         return result 
 
-    def getSocketsWhoBlockedClient(self, clientSocket): 
-        source = self.getClientBySocket(clientSocket) 
-        clientUsername = source["username"] 
-    
-        sockets = [] 
+    def hasBeenBlocked(self, clientName): 
         for client in self._clients: 
-            if clientUsername in client["blockedUsers"]:
-                sockets.append(client["socket"])
+            if clientName in client["blockedUsers"]: return True 
+        
+        return False 
 
-        return sockets 
+    def getSocketToAvoid(self, clientName): 
+        """ Get sockets of users who have blocked the client && client's own socket """
+        sockets = []
 
-    def getSocketsNotBlockedBy(self, clientSocket): 
-        socketsWhoHaveBlockedClient = self.getSocketsWhoBlockedClient(clientSocket)
-        sockets = [] 
-        for client in self._clients:
-            if client["username"] not in socketsWhoHaveBlockedClient and client["socket"] is not None: 
-                sockets.append(client["socket"]) 
-        return sockets    
+        clientSocket = self.getClientByUsername(clientName)["socket"] 
+        if clientSocket: sockets.append(clientSocket) 
+
+        for client in self._clients: 
+            if clientName in client["blockedUsers"]: sockets.append(client["socket"])
+
+        return sockets
         
     def block(self, sourceName, targetName, action="block"): 
         

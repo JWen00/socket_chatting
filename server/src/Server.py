@@ -29,42 +29,48 @@ class Server():
                     connection, addr = self._serverSocket.accept() 
                     self._readList.append(connection) 
                     print("New connection @" + str(addr))
-
+                
                 # Receiving data from made connections 
                 else: 
                     try: 
-                        client = self._manager.getClientBySocket(s) 
-                        information = s.recv(1024)
+                        incomingPacket = s.recv(1024) 
+                        command, data = self.decodeReq(incomingPacket)
+                        data.append(s)
+
+                    # Client left without informing
                     except ConnectionResetError:
-                        if client: self.broadcast(f'{client["username"]} has left the chat.', s) 
+                        try: 
+                            client = self._manager.getClientBySocket(s) 
+                            self.broadcast(f'{client["username"]} has left the server.', client["username"
+                            ])
+                        except ErrorClientNotFound:
+                            pass 
                         self._readList.remove(s) 
+
+                    # Calculate client timeout
+                    if not incomingPacket:
+                        try: 
+                            client = self._manager.getClientBySocket(s) 
+                            if time.monotonic() - client["lastActive"] > self._timeout: 
+                                print(f'<{client["username"]} has timed out')
+                                self.closeClientConnection([socket])
+                        except ErrorClientNotFound: 
+                            pass
+                        continue
+
+                    # Special Case for client logout
+                    if command == "logout": 
+                        status, info = self.closeClientConnection(s) 
+                        s.send(self.constructResponse((status, info))) 
+                        if status == "success": self._readList.remove(s) 
                     
-                    if information: 
-                        command, data = self.decodeReq(information)    
-                        data.append(s) 
-                        s.send(self.processCommand(command, data))
-
-                        # Update the lastActive 
-                        if client:
-                            print(f'{client["username"]}s last active time is now {time.monotonic()}')
-                            client["lastActive"] = time.monotonic()
- 
-                    else: 
-                        # Client has no information and they already logged out 
-                        if client and client["lastActive"] == None: self.broadcast(f'{client["username"]} has left the chat.')
-                        
-                        # Client has timed out
-                        if client and (time.monotonic() - client["lastActive"] > self._timeout): 
-                            print(f'Timeout for client: @{client["username"]}')
-                            self.closeClientConnection({"socket" : socket}) 
-                            
-
+                    else: s.send(self.processCommand(command, data))
+     
     def processCommand(self, command, data): 
         """ Redirects client to appropriate command """ 
 
         commands = { 
-            "login" : self.authenticate, 
-            "logout" : self.closeClientConnection, 
+            "login" : self.authenticate,
             "broadcast" : self.produceBroadcasts, 
             "whoelse" : self.whoElse, 
             "whoelsesince" : self.whoElseSince, 
@@ -75,7 +81,7 @@ class Server():
         }
 
         if not command in commands: 
-            return self.constructResponse("unsuccessful", {
+            return self.constructResponse("unknown", {
                 "command" : command, 
                 "message" : f'Command unknown: {command}'
             })
@@ -196,7 +202,7 @@ class Server():
         except ErrorClientNotFound as e: 
             return self.constructResponse("unsuccessful", { 
                 "command" : "block", 
-                "message" : f'{targetName} does not exit.'
+                "message" : f'Error: {targetName} does not exit.'
             })
              
     def unblockUser(self, data): 
@@ -259,10 +265,11 @@ class Server():
 
         message = " ".join(data[:-1])
         clientSocket = data[-1]
+        clientName = self._manager.getClientBySocket(clientSocket)["username"]
 
-        self.broadcast(message, clientSocket) 
-        if len(self._manager.getSocketsWhoBlockedClient(clientSocket)) > 0: 
-            message = "Your message has been broadcasted! [Note that some recipients may not have received your broadcast]" 
+        self.broadcast(message, clientName) 
+
+        if self._manager.hasBeenBlocked(clientName): message = "Your message has been broadcasted! [Note that some recipients may not have received your broadcast]" 
         else: message = "Your message has been broadcasted!"
 
         return self.constructResponse("success", { 
@@ -270,16 +277,16 @@ class Server():
             "message" : message 
         })
 
-    def closeClientConnection(self, data): 
+    def closeClientConnection(self, clientSocket): 
         """ Closes a client's connection """ 
         
-        # Note: Closing the socket (.close()) will be handled as an exception
-        clientSocket = data[-1]
+        clientName = self._manager.getClientBySocket(clientSocket)["username"]
         self._manager.closeClientSession(clientSocket) 
-        return self.constructResponse("success", data = { 
+        self.broadcast(f'{clientName} has left the chat.', clientName)
+        return "success", { 
             "command" : "exit", 
             "message" : "You have successfully disconnected" 
-        })
+        }
 
     def authenticate(self, data): 
         """ Authenticate a client """ 
@@ -294,7 +301,7 @@ class Server():
         status = self._manager.authenticateClient(username, password) 
         if status == "success": 
             self._manager.updateClient(socket, username) 
-            self.broadcast(f'{username} is online!', socket)
+            self.broadcast(f'{username} is online!', username)
             
             return self.constructResponse("success", { 
                 "command" : "login", 
@@ -311,16 +318,22 @@ class Server():
             "message" : f'Invalid credentials'
         })
         
-    def broadcast(self, message, clientSocket): 
+    def broadcast(self, message, clientName): 
         """ Send message to all applicable clients """ 
 
-        sendableSockets = self._manager.getSocketsNotBlockedBy(clientSocket)
-        for socket in sendableSockets: 
-            if socket is not clientSocket: 
-                socket.send(self.constructResponse("broadcast", {
+        print(f"Broadcasting {message}")
+        socketsToAvoid = self._manager.getSocketToAvoid(clientName) 
+        print(f'sockets to void: {socketsToAvoid}')
+
+        for socket in self._readList: 
+            if socket == self._serverSocket: continue
+            if socket in socketsToAvoid: continue 
+            socket.send(self.constructResponse("broadcast", {
                 "status" : "broadcast", 
                 "message" : message
             }))
+        
+        print(f"finished broadcasting, updated readlist: {self._readList}")
 
     def constructResponse(self, status, data={}): 
         response = {} 
