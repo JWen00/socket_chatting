@@ -29,6 +29,7 @@ class Client():
 
         self._privateChats = {} 
         self.username = None 
+        self._isServerActive = True
         
     def listen(self): 
         """ Listening and getting responses """
@@ -37,97 +38,106 @@ class Client():
         newThread.start()
 
         while newThread.isAlive():
+
+            if self._isServerActive == False: 
+                break
             try: 
                 data = input(self._username + " >> ") 
-            except Exception:
-                self._serverSocket.close()
+                data = data.split(" ") 
+                command = data[0]
+                args = data[1:] 
+                
+                # Commands which do not run through the server: "private" and "stopprivate "
+                if command == "private": self.privateMessage(args[0], " ".join(args[1:]))
+                elif command == "stopprivate": self.stopPrivateMessage(arg[0])
+                else: self._serverSocket.send(self.constructReq(command, args)) 
+            
+            except (KeyboardInterrupt, BrokenPipeError): # TODO: need to manage each broken pip separate 
                 print("Connection closed.")
-                sys.exit()
-            
-            data = data.split(" ") 
-            command = data[0]
-            args = data[1:] 
-            
-            # Commands which do not run through the server: "private" and "stopprivate "
-            if command == "private": self.privateMessage(args[0], " ".join(args[1:]))
-            elif command == "stopprivate": self.stopPrivateMessage(arg[0])
-            else: self._serverSocket.send(self.constructReq(command, args)) 
+                break
 
-            time.sleep(1)
+            time.sleep(1.2)
+
+        print("Main thread also dead")
+
+        # Ensure that client leaves their private chats...
+        for peerConnection in self._privateChats:
+            peerConnection.close()
+        
+        self._p2pSocket.close()
+        self._serverSocket.close()
+
+        
 
     def listenToOthers(self):
         readList = [self._serverSocket, self._p2pSocket]
-        while True: 
-            try: 
-                readable, writable, errorable = select.select(readList, [], [], 1) 
-            
-                for connection in readable: 
+        while self._isServerActive: 
+            if self._isServerActive == False: break
+            readable, writable, errorable = select.select(readList, [], [], 1) 
+        
+            for connection in readable: 
 
-                    # Data arrived from server 
-                    if connection is self._serverSocket: 
+                # Data arrived from server 
+                if connection is self._serverSocket: 
+                    try: 
+                        response = connection.recv(1024) 
+                        status, data = self.decodeResponse(response) 
+                    except (ConnectionResetError, SystemError): 
+                        self._isServerActive = False
+                        break
+
+
+                    if status == "success" and data["command"] == "startPrivate": 
                         try: 
-                            response = connection.recv(1024) 
-                            status, data = self.decodeResponse(response) 
-                        except ConnectionResetError: 
-                            # print("Server has shut down.")
-                            sys.exit()
+                            print(f'Connecting to peer ({data["target"]}) @{data["targetAddress"]}...')
+                            newPeerConnection = socket(AF_INET, SOCK_STREAM) 
+                            newPeerConnection.connect(tuple(data["targetAddress"])) 
+                            newPeerConnection.send(self.constructReq("SYN", { 
+                                "username" : self._username
+                            }))
 
-                        if status == "success" and data["command"] == "startPrivate": 
-                            try: 
-                                print(f'Connecting to peer ({data["target"]}) @{data["targetAddress"]}...')
-                                newPeerConnection = socket(AF_INET, SOCK_STREAM) 
-                                newPeerConnection.connect(tuple(data["targetAddress"])) 
-                                newPeerConnection.send(self.constructReq("SYN", { 
-                                    "username" : self._username
-                                }))
+                            self._privateChats[data["target"]] = newPeerConnection
+                            readList.append(newPeerConnection)
+                            continue
 
-                                self._privateChats[data["target"]] = newPeerConnection
-                                readList.append(newPeerConnection)
-
-                            except ConnectionRefusedError: 
-                                print("Could not connect to peer, please try again") 
-
-                        elif status == "success" and data["command"] == "exit": 
-                            
-                            print("Connection closed.")
-                            
-                            # Ensure that client leaves their private chats...
-                            for peerConnection in self._privateChats:
-                                peerConnection.close()
-                            
-                            sys.exit()
-                
-                        if status == "success": print(f'{data["message"]}')
-                        elif status == "message": print(f'  <{data["source"]}> {data["message"]}')
-                        elif status == "broadcast": print(f'  <<Broadcast>> {data["message"]}')
-                        elif status == "serverMessage": print(f' -- Message from Server: {data["message"]} --')
-                        elif status == "unknown": print(f'Command "{data["command"]}" unknown. {data["message"]}')
-                        else: print(f'{data["message"]}')
-
-                        
-                    # Connection Received from other clients 
-                    elif connection is self._p2pSocket: 
-                        newConnection, serverSocketAddr = self._p2pSocket.accept() # Not sure why it's called serverSocketAddr
-                        readList.append(newConnection) 
-                        print(f"Received new connection from {serverSocketAddr}")
-                        data = newConnection.recv(1024) 
-                        status, data = self.decodeResponse(data) 
-                        if status == "SYN": self._privateChats[data["username"]] = newConnection
-
-                    # Data received from other clients 
+                        except ConnectionRefusedError: 
+                            print("Could not connect to peer, please try again") 
+ 
+                                    
+                    if status == "success": print(f'{data["message"]}')
+                    elif status == "message": print(f'  <{data["source"]}> {data["message"]}')
+                    elif status == "broadcast": print(f'  <<Broadcast>> {data["message"]}')
+                    elif status == "serverMessage": print(f' -- Message from Server: {data["message"]} --')
+                    elif status == "unknown": print(f'{data["message"]}')
+                    elif status == "unsuccessful": print(f'{data["message"]}')
                     else: 
-                        data = connection.recv(1024) 
-                        if not data: 
-                            print(f"Peer connection from {connection.getsockname()} was closed.")
-                            readList.remove(connection)
-                        else: 
-                            status, data =  self.decodeResponse(data) 
-                            if connection not in self.privateChats:
-                                self.privateChats[data["source"]] = connection
-                            if status == "privateMessage": print(f'  PRIVATE <<{data["source"]}>> {data["message"]}')
-                            # Disregard everything else. 
-            except KeyboardInterrupt: 
-                sys.exit() # TODO: Not working 
+                        print("HERE!") 
+                        self._isServerActive = False
+                        break
+
+                    
+                # Connection Received from other clients 
+                elif connection is self._p2pSocket: 
+                    newConnection, serverSocketAddr = self._p2pSocket.accept() # Not sure why it's called serverSocketAddr
+                    readList.append(newConnection) 
+                    print(f"Received new connection from {serverSocketAddr}")
+                    data = newConnection.recv(1024) 
+                    status, data = self.decodeResponse(data) 
+                    if status == "SYN": self._privateChats[data["username"]] = newConnection
+
+                # Data received from other clients 
+                else: 
+                    data = connection.recv(1024) 
+                    if not data: 
+                        print(f"Peer connection from {connection.getsockname()} was closed.")
+                        readList.remove(connection)
+                    else: 
+                        status, data =  self.decodeResponse(data) 
+                        if connection not in self.privateChats:
+                            self.privateChats[data["source"]] = connection
+                        if status == "privateMessage": print(f'  PRIVATE <<{data["source"]}>> {data["message"]}')
+
+        print("Thread is dead")
 
 
     def login(self, username, password): 
@@ -183,8 +193,13 @@ class Client():
         return req 
 
     def decodeResponse(self, response): 
+
+        if not response: 
+            raise SystemError
         response = response.decode() 
         response = json.loads(response) 
         status = response.get("status") 
         data = response.get("data") 
         return status, data 
+        
+        

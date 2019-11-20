@@ -121,12 +121,12 @@ class Server():
             })
 
         # Target Offline
-        if not target["socket"]: 
+        if target["status"] == "inactive": 
             self._manager.addUnreadMessages({ 
-                    "source" : clientName, 
-                    "target" : targetName, 
-                    "message" : message
-                }) 
+                "source" : clientName, 
+                "target" : targetName, 
+                "message" : message
+            }) 
 
             return self.constructResponse("success", { 
                 "command" : "message", 
@@ -147,6 +147,7 @@ class Server():
         if not data: 
             raise ErrorMissingData
 
+        print(data)
         targetName = data[0]
         clientSocket = data[-1]
 
@@ -321,10 +322,7 @@ class Server():
     def broadcast(self, message, clientName): 
         """ Send message to all applicable clients """ 
 
-        print(f"Broadcasting {message}")
         socketsToAvoid = self._manager.getSocketToAvoid(clientName) 
-        print(f'sockets to void: {socketsToAvoid}')
-
         for socket in self._readList: 
             if socket == self._serverSocket: continue
             if socket in socketsToAvoid: continue 
@@ -333,7 +331,6 @@ class Server():
                 "message" : message
             }))
         
-        print(f"finished broadcasting, updated readlist: {self._readList}")
 
     def constructResponse(self, status, data={}): 
         response = {} 

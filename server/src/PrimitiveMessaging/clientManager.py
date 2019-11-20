@@ -58,6 +58,7 @@ class ClientManager():
 
         client = self.getClientByUsername(username) 
         client["socket"] = socket
+        client["status"] = "active"
         client["lastActive"] = time.monotonic()
         client["currSession"] = Session.createSession()
          
@@ -86,18 +87,12 @@ class ClientManager():
     def closeClientSession(self, socket): 
         """ Manage client's session when socket disconnects """
 
-        try: 
-            client = self.getClientBySocket(socket) 
-            client["currSession"].endSession() 
-            oldSession = client["currSession"] 
-            client["sessions"].append(oldSession)
-            client["currSession"] = None 
-            client["status"] = "inactive" 
-
-            print(f'Closing client session, old session: {client["sessions"]}')
-        except ErrorClientNotFound: 
-            print("Client socket not found")
-            return 
+        client = self.getClientBySocket(socket) 
+        client["currSession"].endSession() 
+        oldSession = client["currSession"] 
+        client["sessions"].append(oldSession)
+        client["currSession"] = None 
+        client["status"] = "inactive" 
 
     def getClientByUsername(self, username): 
         for client in self._clients: 
@@ -117,7 +112,7 @@ class ClientManager():
         try: 
             # User already active
             client = self.getClientByUsername(username)
-            if client["status"] == "inactive": return "alreadyActive"
+            if client["status"] == "active": return "alreadyActive"
         except ErrorClientNotFound: 
             pass 
 
