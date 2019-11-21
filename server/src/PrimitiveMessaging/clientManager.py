@@ -140,6 +140,8 @@ class ClientManager():
         for credential in self._login_credentials: 
             if credential["username"] == username and credential["password"] == password: 
                 del self._loginAttempts[username] 
+                client = self.getClientByUsername(username) 
+                client["lastActive"] = time.monotonic()
                 return "success"
 
         # Incorrect username/password 
@@ -154,14 +156,16 @@ class ClientManager():
     def getActiveClients(self, time=None): 
         result = []
         for client in self._clients: 
+            if client["status"] == "active": 
+                result.append(client["username"])
+                continue
+
             if time: 
                 for session in client["sessions"]: 
-                    if session.isSessionWithin(time): 
+                    if session.isSessionWithin(time):
                         result.append(client["username"]) 
-                        continue
-            else: 
-                if client["status"] == "active": result.append(client["username"]) 
-
+                        print("added " + client["username"])
+        
         return result 
 
     def hasBeenBlocked(self, clientName): 
@@ -172,6 +176,7 @@ class ClientManager():
 
     def getSocketToAvoid(self, clientName): 
         """ Get sockets of users who have blocked the client && client's own socket """
+        
         sockets = []
 
         clientSocket = self.getClientByUsername(clientName)["socket"] 
@@ -187,8 +192,13 @@ class ClientManager():
         target = self.getClientByUsername(targetName) 
         client = self.getClientByUsername(sourceName)
 
-        if action =="block": client["blockedUsers"].append(targetName)
-        else: client["blockedUsers"].remove(targetName) 
+        if action =="block": 
+            client["blockedUsers"].append(targetName)
+            return 
+
+        if targetName not in client["blockedUsers"]: 
+            raise ErrorClientNotFound
+        client["blockedUsers"].remove(targetName) 
         
         
 
