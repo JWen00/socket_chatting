@@ -1,7 +1,7 @@
 from src.Server import Server
 import sys
 
-if len(sys.argv) < 3:
+if len(sys.argv) < 4:
     print("Usage: python server.py <server_port> <block_duration> <timeout>") 
     sys.exit(1) 
 

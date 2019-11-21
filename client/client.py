@@ -5,7 +5,7 @@ from clientClass import Client
 
 if len(sys.argv) < 3: 
     print("Usage: python client.py <serverPort> <portNumber>") 
-    os.exit() 
+    sys.exit() 
 
 serverIP = sys.argv[1]
 serverPort = int(sys.argv[2])

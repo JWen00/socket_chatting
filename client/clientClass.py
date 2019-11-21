@@ -55,7 +55,6 @@ class Client():
                 else: self._serverSocket.send(self.constructReq(command, args)) 
             
             except (KeyboardInterrupt, BrokenPipeError): 
-                print("Broken Pipe Error")
                 break
 
             time.sleep(0.7)
@@ -78,11 +77,11 @@ class Client():
         """ Listen to the server, it's own private server and other connections made to private server """
 
         readList = [self._serverSocket, self._p2pSocket]
-        while self._isServerActive: 
-            if self._isServerActive == False: break
+        while self._isServerActive:
+
             try:
                 readable, writable, errorable = select.select(readList, [], [], 1) 
-            except (ConnectionResetError, OSError, SystemError): 
+            except (ConnectionResetError, OSError, SystemError, ValueError): 
                 break  
 
             for connection in readable: 
@@ -92,10 +91,10 @@ class Client():
                     response = connection.recv(1024) 
                     status, data = self.decodeResponse(response)
 
-                    print(f'{status}, {data}') 
-
                     # logout request approved
-                    if status == "logout": break
+                    if status == "logout": 
+                        self._isServerActive = False 
+                        break
 
                     # Startprivate request approved by the server 
                     if status == "success" and data["command"] == "startPrivate": 
@@ -149,7 +148,6 @@ class Client():
  
                 status, data =  self.decodeResponse(data)
                 print(f'PRIVATE <<{data["sender"]}>> {data["message"]}')
-        self._isServerActive = False
 
     def login(self, username, password): 
         """ Authenticates a client """ 
@@ -208,15 +206,15 @@ class Client():
                 "sender" : self._username, 
                 "message" : message 
             }))
-            print(f"Private message has been sent to {targetName}")
+            print(f">> Private message has been sent to {targetName}")
         except KeyError: 
-            print(f'Private chat not established for {targetName}')
+            print(f'>> Private chat not established for {targetName}')
     
     def stopPrivateMessage(self, data): 
         """ Stops an already established private chat """ 
         
         if len(data) < 1: 
-            print("Missing argument for stop private") 
+            print(">> Missing argument for stop private") 
             return
 
         try: 
@@ -231,7 +229,7 @@ class Client():
             print(f'Chat with {targetName} closed.')
             
         except KeyError: 
-            print(f'No private chat exists for {targetName}')
+            print(f'>> No private chat exists for {targetName}')
 
     def constructReq(self, command, data=[]): 
         """ Constructs a response to follow the protocol """

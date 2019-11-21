@@ -7,13 +7,7 @@ from .exceptions.clientExceptions import *
 """ Manages client authentication and client information"""
 class ClientManager(): 
     def __init__(self, blockDuration):
-
-        # Loading Blocking Data
-        data = None 
-        with open("docs/blockingData.txt", "r") as f: 
-            data = f.read() 
-            if not data: self._clientBlockingData = None 
-            else: self._clientBlockingData = json.loads(data)
+        """ INIT loads credentials """
 
         # Loading Login Credentials Data 
         data = None
@@ -34,10 +28,6 @@ class ClientManager():
             }
             self._login_credentials.append(newLogin)
 
-            if self._clientBlockingData is not None and username in self._clientBlockingData: 
-                userBlockList = self._clientBlockingData[username]
-            else: userBlockList = []
-
             self._clients.append({ 
                 "socket" : None, 
                 "status" : "inactive", 
@@ -45,7 +35,7 @@ class ClientManager():
                 "username" : username, 
                 "currSession" : None,
                 "sessions" : [], 
-                "blockedUsers" : userBlockList, 
+                "blockedUsers" : [], 
                 })
 
         self._serverStartTime = time.monotonic() 
@@ -63,14 +53,17 @@ class ClientManager():
         client["currSession"] = Session.createSession()
          
     def updateLastActive(self, clientSocket): 
+        """ Updates last active time """ 
+
         try: 
             client = self.getClientBySocket(clientSocket) 
             client["lastActive"] = time.monotonic()
         except ErrorClientNotFound as e: 
-            print("Cannot update last active - Client doesn't exist yet") 
             sys.exit()
 
-    def addUnreadMessages(self, messageData): 
+    def addUnreadMessages(self, messageData):  
+        """ Adds unread messages to bank of unread messages """ 
+
         source = messageData["source"] 
         target = messageData["target"]
         message = messageData["message"] 
@@ -164,14 +157,12 @@ class ClientManager():
                 for session in client["sessions"]: 
                     if session.isSessionWithin(time):
                         result.append(client["username"]) 
-                        print("added " + client["username"])
         
         return result 
 
     def hasBeenBlocked(self, clientName): 
         for client in self._clients: 
             if clientName in client["blockedUsers"]: return True 
-        
         return False 
 
     def getSocketToAvoid(self, clientName): 
@@ -188,7 +179,8 @@ class ClientManager():
         return sockets
         
     def block(self, sourceName, targetName, action="block"): 
-        
+        """ Blocks and unblocks depending on action """ 
+
         target = self.getClientByUsername(targetName) 
         client = self.getClientByUsername(sourceName)
 

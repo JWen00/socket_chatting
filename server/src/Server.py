@@ -6,7 +6,7 @@ class Server():
             self._serverSocket = socket(AF_INET, SOCK_STREAM) 
             self._serverSocket.bind((serverName, serverPort))
             self._serverSocket.listen(1) 
-            print(f"Server listening on {serverName} : {serverPort}...")
+            # print(f"Server listening on {serverName} : {serverPort}...")
         except OSError:
             print(f"Port busy!")
             sys.exit() 
@@ -28,7 +28,7 @@ class Server():
                 if s is self._serverSocket: 
                     connection, addr = self._serverSocket.accept() 
                     self._readList.append(connection) 
-                    print("New connection @" + str(addr))
+                    # print("New connection @" + str(addr))
                     continue
                 
                 # Receiving data from made connections 
@@ -43,10 +43,9 @@ class Server():
                 
 
                 # Special Case for client logout
-                if command == "logout": 
-                    status, info = self.closeClientConnection(s) 
-                    s.send(self.constructResponse((status, info))) 
-                    if status == "success": self.clientDisconnect(s)
+                if command == "logout":
+                    s.send(self.constructResponse("logout", [])) 
+                    self.clientDisconnect(s)
                     continue 
                 
                 try: 
@@ -63,7 +62,6 @@ class Server():
             #     if connection is self._serverSocket: continue
             #     if connection not in readable: 
             #         client = self._manager.getClientBySocket(connection) 
-            #         print(client)
             #         if not client: continue
 
             #         print(f'clients last active time was {client["lastActive"]}')
@@ -86,7 +84,6 @@ class Server():
         # Client hasn't logged in yet before leaving so don't do anything
         except ErrorClientNotFound:
             pass 
-        print(f'Connection @{clientSocket.getpeername()} has disconnected')
         self._readList.remove(clientSocket)
 
     def processCommand(self, command, data): 
@@ -150,8 +147,8 @@ class Server():
             "message" : "Cannot send empty string"
         })
 
-        # Target blocked or client blocked (2-way) 
-        if targetName in client["blockedUsers"] or clientName in target["blockedUsers"]: 
+        # Target blocked client 
+        if clientName in target["blockedUsers"]: 
             return self.constructResponse("unsuccessful", { 
                 "command" : "message", 
                 "message" : f'Unable to reach {targetName}'
@@ -170,6 +167,7 @@ class Server():
                 "message" : f'Your message will be sent when {targetName} is online.'
             })
         
+        # Send message to target
         target["socket"].send(self.constructResponse("message", { 
                 "source" : clientName, 
                 "message" : message
@@ -181,6 +179,7 @@ class Server():
         })
 
     def startPrivate(self, data): 
+        """ Helps client start private by sending client address,port of target """ 
 
         targetName = data[0]
         clientSocket = data[-1]
@@ -285,12 +284,11 @@ class Server():
 
         time = int(data[0])
         clientSocket = data[-1]
-        clientName = self._manager.getClientBySocket(clientSocket)
+        clientName = self._manager.getClientBySocket(clientSocket)["username"]
         clientNames = self._manager.getActiveClients(time) 
 
         message = f"Users active since {time}(s):\n===========\n"
         for client in clientNames: 
-            print(f'{client} is not {clientName} apparently..')
             if client is not clientName: message += f' * {client}\n'
         message += "===========\n"
         return self.constructResponse("success", { 
@@ -386,6 +384,7 @@ class Server():
     def decodeReq(self, req):
         """ Decodes the response according to the protocol """
 
+        # Sometimes the server/peers send garbage when they've disconnected
         if not req: 
             raise SystemError
 
