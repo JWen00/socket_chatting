@@ -1,5 +1,5 @@
 
-from .PrimitiveMessaging import *
+from .components import *
 class Server(): 
     def __init__(self, serverName, serverPort, blockDuration, timeout): 
         try:

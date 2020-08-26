@@ -7,7 +7,6 @@ from .exceptions.clientExceptions import *
 """ Manages client authentication and client information"""
 class ClientManager(): 
     def __init__(self, blockDuration):
-        """ INIT loads credentials """
 
         # Loading Login Credentials Data 
         data = None
